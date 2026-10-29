@@ -950,3 +950,8 @@ body.vr-active .vr-wizard.is-content:not([hidden]) { background: transparent; }
 .vr-wizard.is-content .wz-target { display: none; }
 .vr-wizard.is-content .wz-anchor { top: auto; bottom: 14px; transform: translate(calc(-50% + var(--dx, 0px)), 0); }
 .vr-wizard.is-content .wz-card { padding: 8px 12px; border-radius: var(--radius); background: rgba(5, 5, 5, .78); }
+
+/* Dos videos */
+.btn-add-right { width: 100%; }
+.btn-add-right .ico { width: 26px; height: 18px; }
+.btn-action { width: 100%; margin-bottom: 2px; }

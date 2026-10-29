@@ -13,11 +13,16 @@
  * Al importar una imagen se reconoce qué trae (anaglifo, par SBS o foto normal)
  * y se elige el «Tipo de foto»: así una foto que no es anaglifo se convierte en
  * anaglifo, y una foto normal en SBS para las gafas.
+ *
+ * En Video se pueden importar dos videos (uno por ojo, p. ej. de dos teléfonos):
+ * se sincronizan con su audio y se igualan tamaño y encuadre automáticamente.
  */
 import { STATUS } from './store.js';
 import { defaultParams, controlOf } from './calibration.js';
 import { analyzeStereo } from './stereoDetect.js';
 import { estimateDepth } from './depthEstimate.js';
+import { estimateAudioOffset } from './audioSync.js';
+import { estimateAlignment } from './alignPair.js';
 import { ImportError, validateFile, loadImage, loadVideo, extensionOf } from './fileImport.js';
 import { anaglyphModule } from './anaglyph.js';
 import { sbsImageModule } from './sbsImage.js';
@@ -49,12 +54,95 @@ export function createStudio({ store, view, ui, calibration }) {
 
   function setParam(key, value) {
     const state = store.get();
+    if (key === 'autoPair') {
+      runPairAuto();
+      return;
+    }
     if (!active || !(key in state.params)) return;
-    const params = { ...state.params, [key]: value };
+    setParams({ [key]: value });
+    if (key === 'source' && value === '2d') ensureDepth();
+  }
+
+  /** Cambia varios parámetros a la vez y avisa al visor y al módulo activo. */
+  function setParams(patch) {
+    const params = { ...store.get().params, ...patch };
     store.set({ params });
     calibration.sync(params);
     pushParamsToView();
-    if (key === 'source' && value === '2d') ensureDepth();
+    for (const key of Object.keys(patch)) active?.controller.onParams?.(key);
+  }
+
+  /* ---------- Dos videos: sincronía por audio y alineación por imagen ---------- */
+  /**
+   * Zona del cuadro (0…1) que cubren LOS DOS videos ya igualados. Se recorta a
+   * ella, conservando la proporción, para que ningún ojo vea bordes negros que
+   * el otro no ve. Devuelve el recorte { frameX, frameY, frameW } (frameW = alto
+   * y ancho relativos).
+   */
+  function sharedFrame(content, scale, ox, oy) {
+    const fw = (content.width / content.height) / (content.right.width / content.right.height) / scale;
+    const fh = 1 / scale;
+    const cx = 0.5 - fw / 2 + ox;
+    const cy = 0.5 - fh / 2 + oy;
+    const u0 = Math.max(0, -cx / fw);
+    const u1 = Math.min(1, (1 - cx) / fw);
+    const v0 = Math.max(0, -cy / fh);
+    const v1 = Math.min(1, (1 - cy) / fh);
+    const size = Math.max(0.5, Math.min(1, u1 - u0, v1 - v0)); // nunca recorta más de la mitad
+    const place = (lo, hi) => Math.min(Math.max((lo + hi) / 2 - size / 2, 0), 1 - size);
+    return { frameX: place(u0, u1), frameY: place(v0, v1), frameW: size };
+  }
+
+  async function runPairAuto() {
+    const current = active;
+    if (!current?.content.right || current.pairBusy) return;
+    current.pairBusy = true;
+    const say = (kind, text) => active === current && store.set({ message: { kind, text } });
+    const seconds = (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)} s`;
+    current.controller.pause();
+
+    try {
+      say('info', 'Uniendo los dos videos: buscando la sincronía con el audio…');
+      let syncNote;
+      let offset = store.get().params.sync ?? 0;
+      try {
+        const result = await estimateAudioOffset(current.files[0], current.files[1]);
+        offset = Math.min(10, Math.max(-10, Math.round(result.offset * 50) / 50));
+        syncNote = result.confident
+          ? `sincronizados por audio (el derecho va ${seconds(offset)})`
+          : `sincronía dudosa (${seconds(offset)}): afínala con «Sincronía»`;
+      } catch (error) {
+        console.warn('[StereoVision] Sin sincronía por audio:', error);
+        syncNote = 'no se pudo leer el audio: ajusta «Sincronía» a mano con un aplauso o un movimiento rápido';
+      }
+      if (active !== current) return;
+      setParams({ sync: offset });
+
+      say('info', 'Igualando el tamaño y el encuadre de los dos videos…');
+      let alignNote;
+      try {
+        const align = await estimateAlignment(current.content.source, current.content.right.source, offset);
+        if (active !== current) return;
+        if (align.confident) {
+          const sizeR = Math.min(160, Math.max(60, Math.round(align.scale * 100)));
+          const frame = sharedFrame(current.content, sizeR / 100, align.ox, align.oy);
+          setParams({ sizeR, rightX: align.ox, rightY: align.oy, ...frame });
+          alignNote = `tamaño igualado (derecho al ${sizeR} %)`;
+          if (frame.frameW < 0.995) alignNote += `; se recortó al cuadro que ven las dos cámaras (${Math.round(100 / frame.frameW)} %) para que no haya bordes negros`;
+        } else {
+          alignNote = 'no se encontró el mismo encuadre: ajusta «Tamaño del video derecho»';
+        }
+      } catch (error) {
+        console.warn('[StereoVision] Sin alineación automática:', error);
+        alignNote = 'ajusta «Tamaño del video derecho» a mano';
+      }
+      if (active !== current) return;
+      const { sync, sizeR, rightX, rightY, frameX, frameY, frameW } = store.get().params;
+      current.pairAuto = { sync, sizeR, rightX, rightY, frameX, frameY, frameW };
+      say('ok', `Videos unidos: ${syncNote}; ${alignNote}. Pulsa Reproducir y entra al modo VR.`);
+    } finally {
+      current.pairBusy = false;
+    }
   }
 
   /* ---------- Profundidad real para fotos normales ---------- */
@@ -95,7 +183,8 @@ export function createStudio({ store, view, ui, calibration }) {
   function resetParams() {
     const state = store.get();
     if (!active) return;
-    const params = defaultParams(state.module);
+    // Se conserva lo que trae el archivo (tipo de foto y la unión de dos videos).
+    const params = { ...defaultParams(state.module), source: state.params.source, ...active.pairAuto };
     store.set({ params, message: { kind: 'ok', text: 'Calibración restablecida a los valores iniciales.' } });
     calibration.sync(params);
     pushParamsToView();
@@ -200,14 +289,16 @@ export function createStudio({ store, view, ui, calibration }) {
   }
 
   /* ---------- Importación ---------- */
-  function fileInfo(file, content, sample) {
+  function fileInfo(file, content, sample, files) {
     const ext = extensionOf(file.name);
+    const pair = files?.length === 2 && content.right;
     return {
-      name: file.name,
+      name: pair ? `${files[0].name} (izq.) + ${files[1].name} (der.)` : file.name,
       format: (ext || file.type || 'desconocido').toUpperCase(),
-      size: file.size,
+      size: pair ? files[0].size + files[1].size : file.size,
       width: content.width,
       height: content.height,
+      resolution: pair ? `${content.width} × ${content.height} + ${content.right.width} × ${content.right.height} px` : null,
       duration: content.kind === 'video' ? content.duration : null,
       sample,
     };
@@ -255,7 +346,14 @@ export function createStudio({ store, view, ui, calibration }) {
         );
       }
 
-      const detected = module.kind === 'image' ? detectSource(module.id, content) : null;
+      let detected = null;
+      if (content.right) detected = { source: 'pair', text: null };
+      else if (module.kind === 'image') detected = detectSource(module.id, content);
+      else detected = await detectVideoSource(content);
+      if (mine !== token) {
+        content.release();
+        return;
+      }
       if (detected) {
         const params = { ...store.get().params, source: detected.source };
         store.set({ params });
@@ -264,17 +362,18 @@ export function createStudio({ store, view, ui, calibration }) {
 
       pushParamsToView();
       const controller = module.activate({ content, view, store, ui });
-      active = { module, content, controller };
-      if (detected?.source === '2d') queueMicrotask(ensureDepth);
+      active = { module, content, controller, files: produced.files ?? [produced.file] };
+      if (detected?.source === '2d' && module.kind === 'image') queueMicrotask(ensureDepth);
+      if (content.right) queueMicrotask(runPairAuto);
       store.set({
         status: controller.getStatus(),
-        file: fileInfo(produced.file, content, produced.sample),
+        file: fileInfo(produced.file, content, produced.sample, produced.files),
         pending: null,
         message: {
           kind: 'ok',
-          text: module.kind === 'video'
+          text: detected?.text ?? (module.kind === 'video'
             ? `«${produced.file.name}» está listo. Pulsa Reproducir para iniciar.`
-            : detected?.text ?? `«${produced.file.name}» cargado. Ajusta la vista en «Calibra».`,
+            : `«${produced.file.name}» cargado. Ajusta la vista en «Calibra».`),
         },
       });
     } catch (error) {
@@ -285,7 +384,8 @@ export function createStudio({ store, view, ui, calibration }) {
     }
   }
 
-  function importFile(file) {
+  /** Acepta un archivo o una lista; en Video, dos archivos se unen en un par. */
+  function importFile(input) {
     const state = store.get();
     if (!state.module) {
       store.set({
@@ -293,11 +393,84 @@ export function createStudio({ store, view, ui, calibration }) {
       });
       return Promise.resolve();
     }
+    const files = input instanceof File ? [input] : [...(input ?? [])];
+    if (state.module === 'sbs-video' && files.length >= 2) return importPair(...orderPair(files[0], files[1]));
+    const file = files[0];
     return runImport(file?.name ?? 'archivo', async (module) => {
       validateFile(file, module.kind);
       const content = module.kind === 'image' ? await loadImage(file) : await loadVideo(file, ui.videoHolder);
       return { file, content, sample: false };
     });
+  }
+
+  /**
+   * Izquierda/derecha por el nombre del archivo («der», «right», «_R»…); si no lo
+   * dice, el primero es el izquierdo. «Intercambiar ojos» lo corrige.
+   */
+  function orderPair(a, b) {
+    const isRight = (f) => /(^|[\s_.-])(der|derecho|derecha|right|r)([\s_.-]|$)/i.test(f.name.replace(/\.[^.]+$/, ''));
+    return isRight(a) && !isRight(b) ? [b, a] : [a, b];
+  }
+
+  function importPair(leftFile, rightFile) {
+    return runImport(`${leftFile.name} + ${rightFile.name}`, async () => {
+      validateFile(leftFile, 'video');
+      validateFile(rightFile, 'video');
+      const left = await loadVideo(leftFile, ui.videoHolder);
+      let right;
+      try {
+        right = await loadVideo(rightFile, ui.videoHolder);
+      } catch (error) {
+        left.release();
+        throw error;
+      }
+      const content = {
+        kind: 'video',
+        source: left.source,
+        width: left.width,
+        height: left.height,
+        duration: left.duration,
+        right: { source: right.source, width: right.width, height: right.height, duration: right.duration },
+        release() {
+          left.release();
+          right.release();
+        },
+      };
+      return { file: leftFile, files: [leftFile, rightFile], content, sample: false };
+    });
+  }
+
+  /** Con un video ya cargado, agrega el del ojo derecho y los une. */
+  function addRightVideo(file) {
+    const current = active;
+    if (!current || current.module.id !== 'sbs-video' || current.content.right) return Promise.resolve();
+    return importPair(current.files[0], file);
+  }
+
+  /** ¿El video trae dos vistas? Se mira un cuadro cerca del inicio (el primero suele ser negro). */
+  async function detectVideoSource(content) {
+    const video = content.source;
+    const seek = (time) => new Promise((resolve) => {
+      const timer = setTimeout(resolve, 3000);
+      video.addEventListener('seeked', () => { clearTimeout(timer); resolve(); }, { once: true });
+      video.currentTime = time;
+    });
+    let result;
+    try {
+      await seek(Math.min(1, (content.duration || 0) / 3));
+      result = analyzeStereo(video);
+    } catch (error) {
+      console.warn('[StereoVision] No se pudo analizar el video:', error);
+      return null;
+    } finally {
+      await seek(0);
+    }
+    const fix = 'Si no es así, cámbialo en «Tipo de foto».';
+    if (result.sbs) return { source: 'sbs', text: `Video SBS listo. Pulsa Reproducir y entra al modo VR. ${fix}` };
+    return {
+      source: '2d',
+      text: `Este video no trae dos vistas: el Studio genera la del otro ojo. Para un 3D real, usa «Agregar video del ojo derecho» con un video grabado a la vez desde otro teléfono. ${fix}`,
+    };
   }
 
   function loadSample() {
@@ -347,7 +520,9 @@ export function createStudio({ store, view, ui, calibration }) {
     panBy,
     recenter,
     downloadResult,
+    addRightVideo,
     hasContent: () => Boolean(active),
+    hasPair: () => Boolean(active?.content.right),
     selectModule,
     importFile,
     loadSample,

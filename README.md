@@ -33,7 +33,7 @@ Calibrar **no inventa profundidad ni modifica el archivo**. Son tres cosas disti
 
 ### Alcance
 
-**Sí hace:** importar JPG/JPEG/PNG/WebP y MP4 locales; validar y mostrar errores claros; reconocer si una foto es anaglifo, par SBS o foto normal; **crear un anaglifo** desde un par SBS (3D real) o desde una foto normal (profundidad estimada con IA en el dispositivo); **crear un par SBS para gafas** desde una foto normal; aceptar Half-SBS; anaglifo con zoom, brillo y contraste; SBS con desplazamiento horizontal, alineación vertical, escala e intercambio de ojos; reproducción de video SBS con controles; modo VR táctil con asistente para calibrar los lentes de las gafas; zoom y encuadre con rueda, arrastre o pellizco; descargar el anaglifo o el SBS resultante en JPG; liberar recursos al cambiar de archivo.
+**Sí hace:** importar JPG/JPEG/PNG/WebP y MP4 locales; validar y mostrar errores claros; reconocer si una foto es anaglifo, par SBS o foto normal; **crear un anaglifo** desde un par SBS (3D real) o desde una foto normal (profundidad estimada con IA en el dispositivo); **crear un par SBS para gafas** desde una foto normal; en Video, **generar el otro ojo** de un video normal o **unir dos videos** (uno por ojo, de teléfonos distintos) sincronizándolos por audio e igualando tamaño y encuadre; aceptar Half-SBS; anaglifo con zoom, brillo y contraste; SBS con desplazamiento horizontal, alineación vertical, escala e intercambio de ojos; reproducción de video SBS con controles; modo VR táctil con asistente para calibrar los lentes de las gafas; zoom y encuadre con rueda, arrastre o pellizco; descargar el anaglifo o el SBS resultante en JPG; liberar recursos al cambiar de archivo.
 
 **No hace (fuera de alcance):** garantizar la profundidad exacta de una foto 2D (se estima con IA; en video y sin conexión se usa un relieve aproximado: abajo y al centro cerca, arriba lejos), convertir un anaglifo en SBS, exportar video, transcodificar video, seguimiento de cabeza/giroscopio, SBS vertical (arriba/abajo) u «over-under», cuentas de usuario o almacenamiento en servidor.
 
@@ -45,6 +45,7 @@ Calibrar **no inventa profundidad ni modifica el archivo**. Son tres cosas disti
 2. **Importa** un archivo con «Importar archivo…», arrastrándolo al visor, o prueba con **«Cargar muestra»**. El Studio reconoce qué trae la foto y elige el **Tipo de foto**:
    - En **Anaglifo**: si ya es anaglifo se muestra tal cual; si es un par SBS, se compone el anaglifo con sus dos vistas; si es una foto normal, se estima su profundidad con IA (Depth Anything V2, en el dispositivo; el modelo de ≈27 MB se descarga una vez) y se crea la otra vista. El anaglifo creado usa la mezcla Dubois para reducir fantasmas.
    - En **Imagen SBS**: si es SBS se reparte una mitad por ojo; si es una foto normal, se crean las dos vistas para las gafas. Half-SBS se elige a mano.
+   - En **Video SBS**: un video SBS se reparte por ojo; un video normal genera el otro ojo (relieve aproximado). Para un 3D real, **selecciona dos videos a la vez** (o usa «Agregar video del ojo derecho»): el Studio los **sincroniza con su audio** (busca los mismos sonidos en ambos), **iguala tamaño y posición** comparando un cuadro de cada uno y **recorta al cuadro que ven las dos cámaras** para que no haya bordes negros. Durante la reproducción el derecho sigue al izquierdo y corrige la deriva. Se afina con «Sincronía» y «Tamaño del video derecho», o con «Sincronizar y alinear automáticamente». Si el nombre del archivo dice «der»/«right», va al ojo derecho; si no, el primero es el izquierdo («Intercambiar ojos» lo corrige). Consejo: graba con los dos teléfonos en la misma orientación, a la altura de los ojos y separados unos 6–7 cm, y da un aplauso al inicio.
    - Si la detección se equivoca, cámbialo en «Tipo de foto».
 3. **Calibra** en el panel derecho; los cambios se ven al instante. Sobre el visor: rueda o pellizco = zoom, arrastrar = mover, doble clic/toque = centrar. **Restablecer** devuelve todo a los valores iniciales. **Descargar** genera un JPG nuevo (anaglifo o SBS) con la calibración aplicada; el original no cambia.
 4. En SBS pulsa **«Entrar al modo VR»** y coloca el teléfono en horizontal dentro de las gafas. La primera vez aparece el **asistente de las gafas**: cada ojo ve una línea dentro de un círculo; toca el tercio izquierdo para restar, el derecho para sumar (mantén pulsado para avanzar rápido) y el centro para pasar de **Separación** a **Altura** y a **Tamaño** (este último se hace viendo tu foto o video). Está bien cuando ves una sola cruz «+». Se guarda en el teléfono; para repetirlo **mantén pulsada la pantalla** o usa **«Calibrar gafas»**. En iPhone, Safari no permite pantalla completa: usa Compartir → «Agregar a inicio» y abre el Studio desde ese icono. Sal con **«Salir de VR»** o `Esc`.
@@ -58,6 +59,7 @@ Rangos de calibración:
 | Anaglifo creado | Desplazamiento / Alineación (par SBS) / Intercambiar ojos | −10…10 % | 0 |
 | SBS imagen y video | Tipo de foto | SBS completo / Half-SBS / Foto normal | según detección (video: SBS) |
 | Foto normal (anaglifo o SBS) | Profundidad | 0–100 % | 50 % |
+| Dos videos | Sincronía / Tamaño del video derecho | −10…10 s (paso 0.02) / 60–160 % | automáticos (audio e imagen) |
 | Modo VR (gafas) | Separación / Altura de lentes | −25…25 % / −10…10 % | guardado en el teléfono |
 | SBS imagen y video | Desplazamiento horizontal / Alineación vertical | −10…10 % (paso 0.1) | 0 |
 | SBS imagen y video | Zoom | 50–200 % | 100 % |
@@ -139,6 +141,8 @@ StereoVision-Studio-3D/
 | `vrMode.js` | Entrar/salir del visor limpio; pantalla completa, bloqueo horizontal y Wake Lock con alternativa dentro de la página si el navegador no los permite. |
 | `stereoDetect.js` | Analiza una copia reducida de la imagen: correlación rojo↔verde (anaglifo) y mitad izquierda↔derecha, con control de simetría en espejo (SBS). |
 | `depthEstimate.js` | Profundidad de una foto normal con Depth Anything V2 (transformers.js, WASM), calculada en el dispositivo; suaviza el mapa y elige el plano de pantalla. |
+| `audioSync.js` | Desfase entre dos videos: huella de golpes de sonido cada 10 ms y correlación cruzada (±20 s), con medida de confianza. |
+| `alignPair.js` | Escala y posición del video derecho respecto del izquierdo, buscando la mejor correlación entre un cuadro de cada uno. |
 | `gestures.js` | Rueda/pellizco = zoom, arrastrar = mover, doble clic/toque = centrar, sobre el visor. |
 | `vrWizard.js` | Asistente de las gafas (miras por ojo, tercios de pantalla); guarda la separación de lentes en `localStorage`. |
 | `intro.js` | Portada: convergencia del título, selección de módulo y transición al Studio. |

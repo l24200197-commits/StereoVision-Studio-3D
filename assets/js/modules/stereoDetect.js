@@ -1,5 +1,5 @@
 /**
- * stereoDetect.js — Reconoce qué trae una imagen: anaglifo, par SBS o foto normal.
+ * stereoDetect.js — Reconoce qué trae una imagen (o un cuadro de video): anaglifo, par SBS o foto normal.
  *
  * Trabaja sobre una copia reducida (≈160 px de ancho), así que tarda unos
  * milisegundos. Es una estimación: el usuario puede corregirla en «Tipo de foto».
@@ -52,8 +52,8 @@ function correlation(a, b, w, h, shift, aStart = 0, bStart = 0, span = w) {
 }
 
 export function analyzeStereo(image) {
-  const srcW = image.naturalWidth || image.width;
-  const srcH = image.naturalHeight || image.height;
+  const srcW = image.naturalWidth || image.videoWidth || image.width;
+  const srcH = image.naturalHeight || image.videoHeight || image.height;
   const w = SAMPLE_W;
   const h = Math.max(16, Math.min(240, Math.round((SAMPLE_W * srcH) / srcW)));
   const canvas = document.createElement('canvas');

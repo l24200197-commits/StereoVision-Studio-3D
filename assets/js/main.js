@@ -6,6 +6,7 @@
  *   stereoView → Three.js/WebGL · vrMode → visor VR · intro → portada
  *   stereoDetect → qué trae la foto · depthEstimate → profundidad con IA
  *   gestures → zoom y encuadre · vrWizard → gafas
+ *   audioSync + alignPair → unir dos videos (sincronía y tamaño)
  *
  * Todo corre en el navegador: no hay servidor, registro ni envío de archivos.
  */
@@ -55,6 +56,7 @@ function boot() {
     onVr: () => vr?.enter(),
     onVrPlay: () => studio?.togglePlayback(),
     onDownload: () => studio?.downloadResult(),
+    onAddRight: (file) => studio?.addRightVideo(file),
   });
 
   if (view) {

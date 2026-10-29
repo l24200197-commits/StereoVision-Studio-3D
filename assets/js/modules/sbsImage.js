@@ -21,6 +21,10 @@ export function sbsViewParams(params) {
     contrast: 1,
     panX: params.panX,
     panY: params.panY,
+    rightScale: (params.sizeR ?? 100) / 100,
+    rightX: params.rightX ?? 0,
+    rightY: params.rightY ?? 0,
+    frame: [params.frameX ?? 0, params.frameY ?? 0, params.frameW ?? 1],
   };
 }
 

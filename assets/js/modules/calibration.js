@@ -81,6 +81,55 @@ const SBS_CONTROLS = [
   },
 ];
 
+/* Video: uno (SBS, Half-SBS o normal) o dos videos, uno por ojo. */
+const isPair = (p) => p.source === 'pair';
+const VIDEO_CONTROLS = [
+  {
+    ...SBS_CONTROLS[0],
+    options: [['sbs', 'SBS completo'], ['half', 'Half-SBS'], ['2d', 'Video normal']],
+    hint: 'Video normal: el Studio genera la vista del otro ojo. Para un 3D real, agrega un segundo video grabado desde otro teléfono.',
+    when: (p) => !isPair(p),
+  },
+  {
+    key: 'sync',
+    type: 'range',
+    label: 'Sincronía',
+    min: -10,
+    max: 10,
+    step: 0.02,
+    def: 0,
+    unit: 's',
+    signed: true,
+    hint: 'Atrasa o adelanta el video derecho. Se calcula solo con el audio; afínalo si un movimiento rápido no coincide en los dos ojos.',
+    when: isPair,
+  },
+  {
+    key: 'sizeR',
+    type: 'range',
+    label: 'Tamaño del video derecho',
+    min: 60,
+    max: 160,
+    step: 1,
+    def: 100,
+    unit: '%',
+    hint: 'Iguala el zoom de los dos teléfonos: la escena debe verse del mismo tamaño en ambos ojos.',
+    when: isPair,
+  },
+  {
+    key: 'autoPair',
+    type: 'action',
+    label: 'Unir de nuevo',
+    text: 'Sincronizar y alinear automáticamente',
+    hint: 'Vuelve a calcular la sincronía (audio) y el tamaño y la posición (imagen).',
+    when: isPair,
+  },
+  SHIFT,
+  { ...ALIGN, when: (p) => p.source !== '2d' },
+  { ...DEPTH, hint: 'El video no trae dos vistas: se genera la otra con un relieve aproximado (abajo y al centro, cerca). Súbela poco a poco.' },
+  SBS_CONTROLS[4],
+  SBS_CONTROLS[5],
+];
+
 export const CALIBRATION = Object.freeze({
   anaglyph: [
     {
@@ -138,13 +187,15 @@ export const CALIBRATION = Object.freeze({
     },
   ],
   'sbs-image': SBS_CONTROLS,
-  'sbs-video': SBS_CONTROLS,
+  'sbs-video': VIDEO_CONTROLS,
 });
 
 /** Valores predeterminados de un módulo (usados al importar y al restablecer). */
 export function defaultParams(moduleId) {
   const params = { panX: 0, panY: 0 }; // encuadre: lo mueven los gestos sobre el visor
-  for (const control of CALIBRATION[moduleId] ?? []) params[control.key] = control.def;
+  // Dos videos: recorte del derecho y cuadro común de ambos (los calcula la unión automática).
+  if (moduleId === 'sbs-video') Object.assign(params, { rightX: 0, rightY: 0, frameX: 0, frameY: 0, frameW: 1 });
+  for (const control of CALIBRATION[moduleId] ?? []) if (control.type !== 'action') params[control.key] = control.def;
   return params;
 }
 
@@ -154,7 +205,7 @@ export function controlOf(moduleId, key) {
 }
 
 function formatValue(control, value) {
-  const decimals = control.step < 1 ? 1 : 0;
+  const decimals = control.step < 0.1 ? 2 : control.step < 1 ? 1 : 0;
   const number = Number(value).toFixed(decimals);
   const sign = control.signed && Number(value) > 0 ? '+' : '';
   return `${sign}${number}${control.unit ? ` ${control.unit}` : ''}`;
@@ -191,6 +242,13 @@ export function createCalibrationPanel(root, { onChange }) {
         const output = row.querySelector('output');
         input.addEventListener('input', () => onChange(control.key, Number(input.value)));
         refs.set(control.key, { control, row, input, output });
+      } else if (control.type === 'action') {
+        row.innerHTML = `
+          <button type="button" class="btn btn-action" id="${id}" aria-describedby="${hintId}">${control.text}</button>
+          <p id="${hintId}" class="ctl-hint">${control.hint}</p>`;
+        const input = row.querySelector('button');
+        input.addEventListener('click', () => onChange(control.key, true));
+        refs.set(control.key, { control, row, input });
       } else if (control.type === 'choice') {
         const labelId = `${id}-label`;
         row.innerHTML = `
@@ -237,6 +295,7 @@ export function createCalibrationPanel(root, { onChange }) {
     for (const { control, row, input, inputs, output } of refs.values()) {
       row.hidden = Boolean(control.when && !control.when(params));
       const value = params[control.key];
+      if (control.type === 'action') continue;
       if (control.type === 'range') {
         if (Number(input.value) !== value) input.value = String(value);
         output.textContent = formatValue(control, value);

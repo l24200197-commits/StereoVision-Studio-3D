@@ -9,6 +9,10 @@
  *
  * Este módulo conecta los controles de reproducción con el video y mantiene el
  * dibujo al ritmo de los cuadros mientras se reproduce.
+ *
+ * Con DOS videos (uno por ojo, p. ej. de dos teléfonos) el izquierdo manda: da
+ * el audio y el tiempo, y el derecho lo sigue con el desfase «Sincronía»,
+ * corrigiendo la deriva con pequeños cambios de velocidad o un salto.
  */
 import { STATUS } from './store.js';
 import { sbsViewParams } from './sbsImage.js';
@@ -42,6 +46,32 @@ export const sbsVideoModule = {
     let frameId = 0;
     let scrubbing = false;
 
+    /* ---- Segundo video (ojo derecho) siguiendo al izquierdo ---- */
+    const right = content.right?.source ?? null;
+    if (right) {
+      right.muted = true; // el audio sale del izquierdo
+      on(right, 'seeked', () => view.requestRender());
+    }
+    function syncRight(force = false) {
+      if (!right) return;
+      const offset = store.get().params.sync ?? 0;
+      const target = video.currentTime + offset;
+      const end = Math.max(0, (right.duration || 0) - 0.05);
+      const clamped = Math.min(Math.max(target, 0), end);
+      const outside = target < 0 || target > end;
+      const drift = right.currentTime - clamped;
+      const playing = !video.paused && !video.ended && !outside;
+      if (!playing || force || Math.abs(drift) > 0.15) {
+        if (Math.abs(drift) > 0.01) right.currentTime = clamped;
+        right.playbackRate = 1;
+      } else {
+        // Deriva pequeña: se corrige sin saltos, acelerando o frenando un poco.
+        right.playbackRate = Math.min(1.08, Math.max(0.92, 1 - drift * 1.5));
+      }
+      if (playing && right.paused) right.play().catch(() => {});
+      if (!playing && !right.paused) right.pause();
+    }
+
     /* ---- Dibujo sincronizado con los cuadros del video ---- */
     function nextFrame() {
       if (!running) return;
@@ -50,6 +80,7 @@ export const sbsVideoModule = {
     }
     function onFrame() {
       if (!running) return;
+      syncRight();
       view.requestRender();
       updateTime();
       nextFrame();
@@ -94,6 +125,7 @@ export const sbsVideoModule = {
         // Si quedó al final (aunque el navegador aún no marque "ended"), vuelve a empezar.
         if (video.ended || video.currentTime >= (video.duration || 0) - 0.05) video.currentTime = 0;
         await video.play(); // solo se llama desde un gesto del usuario (RN-18)
+        syncRight(true);
       } catch (error) {
         if (error?.name === 'AbortError') return;
         store.set({
@@ -137,9 +169,9 @@ export const sbsVideoModule = {
       if (store.get().status !== STATUS.LOADING) store.set({ status });
     };
     on(video, 'play', () => { startDriver(); updatePlayUi(); setStatus(STATUS.PLAYING); });
-    on(video, 'pause', () => { stopDriver(); updatePlayUi(); view.requestRender(); setStatus(getStatus()); });
+    on(video, 'pause', () => { syncRight(true); stopDriver(); updatePlayUi(); view.requestRender(); setStatus(getStatus()); });
     on(video, 'ended', () => { stopDriver(); updatePlayUi(); updateTime(); setStatus(STATUS.PAUSED); });
-    on(video, 'seeked', () => { view.requestRender(); updateTime(); });
+    on(video, 'seeked', () => { syncRight(true); view.requestRender(); updateTime(); });
     on(video, 'timeupdate', updateTime);
     on(video, 'durationchange', updateTime);
     on(video, 'volumechange', updateVolumeUi);
@@ -171,10 +203,15 @@ export const sbsVideoModule = {
       pause,
       toggle,
       seekBy,
+      /** Un ajuste cambió: «Sincronía» mueve el video derecho al instante. */
+      onParams(key) {
+        if (key === 'sync') syncRight(true);
+      },
       deactivate() {
         stopDriver();
         ac.abort(); // quita todos los escuchas de este video y de la barra
         video.pause();
+        right?.pause();
       },
     };
   },

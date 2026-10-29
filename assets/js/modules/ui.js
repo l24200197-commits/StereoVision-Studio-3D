@@ -29,10 +29,10 @@ const MODULE_COPY = Object.freeze({
   },
   'sbs-video': {
     title: 'Video SBS',
-    description: 'Video MP4 Side-by-Side. Recomendado: video H.264 y audio AAC, que es lo que mejor reproducen los teléfonos.',
+    description: 'Un video MP4 lado a lado (SBS), un video normal (el Studio genera el otro ojo) o dos videos, uno por ojo, grabados a la vez desde dos teléfonos: se sincronizan y se igualan solos.',
     emptyTitle: 'Video SBS listo para importar',
-    emptyText: 'Importa un MP4 con las dos perspectivas lado a lado, o arrástralo aquí. La reproducción comienza al pulsar Reproducir.',
-    kindLabel: 'video MP4',
+    emptyText: 'Importa un MP4 SBS, un video normal o DOS videos a la vez (selecciona ambos), o arrástralos aquí. La reproducción comienza al pulsar Reproducir.',
+    kindLabel: 'video MP4 (o dos, uno por ojo)',
   },
 });
 
@@ -81,6 +81,7 @@ export function createUi() {
     vrCalibrate: $('vr-calibrate'),
     vrWizard: $('vr-wizard'),
     btnDownload: $('btn-download'),
+    btnAddRight: $('btn-add-right'),
     videoHolder: $('video-holder'),
   };
 
@@ -100,11 +101,25 @@ export function createUi() {
     for (const radio of els.moduleRadios) {
       radio.addEventListener('change', () => radio.checked && handlers.onModule(radio.value));
     }
-    els.btnImport.addEventListener('click', () => els.fileInput.click());
+    // El mismo selector sirve para importar y para agregar el video del ojo derecho.
+    let addingRight = false;
+    els.btnImport.addEventListener('click', () => {
+      addingRight = false;
+      els.fileInput.multiple = els.body.dataset.module === 'sbs-video';
+      els.fileInput.click();
+    });
+    els.fileInput.addEventListener('cancel', () => { addingRight = false; });
+    els.btnAddRight.addEventListener('click', () => {
+      addingRight = true;
+      els.fileInput.multiple = false;
+      els.fileInput.click();
+    });
     els.fileInput.addEventListener('change', () => {
-      const file = els.fileInput.files?.[0];
+      const files = [...(els.fileInput.files ?? [])];
       els.fileInput.value = ''; // permite volver a elegir el mismo archivo
-      if (file) handlers.onFile(file);
+      if (!files.length) return;
+      if (addingRight) handlers.onAddRight(files[0]);
+      else handlers.onFile(files);
     });
     els.btnSample.addEventListener('click', handlers.onSample);
     els.btnClear.addEventListener('click', handlers.onClear);
@@ -133,8 +148,8 @@ export function createUi() {
       event.preventDefault();
       depth = 0;
       stage.classList.remove('is-dragover');
-      const file = event.dataTransfer?.files?.[0];
-      if (file) handlers.onFile(file);
+      const files = [...(event.dataTransfer?.files ?? [])];
+      if (files.length) handlers.onFile(files);
     });
     // Un archivo soltado fuera del visor no debe abrirse en la pestaña.
     window.addEventListener('dragover', (event) => event.preventDefault());
@@ -175,6 +190,7 @@ export function createUi() {
 
     const kind = state.module ? modules[state.module].kind : null;
     els.fileInput.accept = kind ? FORMATS[kind].accept : '';
+    els.fileInput.multiple = state.module === 'sbs-video'; // en Video se pueden elegir dos (uno por ojo)
   }
 
   function renderImport(state, modules) {
@@ -184,6 +200,11 @@ export function createUi() {
     els.btnImport.disabled = !canImport;
     els.btnSample.disabled = !canImport;
     els.btnClear.disabled = !(state.file && !busy && !state.vr);
+    // Video normal cargado: se puede sumar el del otro ojo para un 3D real.
+    els.body.dataset.module = state.module ?? '';
+    const single = state.module === 'sbs-video' && state.file && state.params.source !== 'pair';
+    els.btnAddRight.hidden = !single;
+    els.btnAddRight.disabled = !single || busy || state.vr;
 
     const copy = MODULE_COPY[state.module];
     setText(
@@ -207,7 +228,7 @@ export function createUi() {
     setText(els.fiName, file.name);
     setText(els.fiFormat, file.format);
     setText(els.fiSize, formatBytes(file.size));
-    setText(els.fiRes, `${file.width} × ${file.height} px`);
+    setText(els.fiRes, file.resolution ?? `${file.width} × ${file.height} px`);
     els.fiDurationRow.hidden = file.duration == null;
     if (file.duration != null) setText(els.fiDuration, formatTime(file.duration));
     setText(els.fiSource, file.sample ? 'Muestra incluida en el Studio' : 'Archivo local del dispositivo');

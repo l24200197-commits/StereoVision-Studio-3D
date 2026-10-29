@@ -70,6 +70,8 @@ const FRAGMENT_SHADER = /* glsl */ `
     }
     e = clamp(e, 0.0, 1.0);
     vec2 t = crop.xy + e * crop.zw;
+    // Un recorte puede salirse del video (dos teléfonos con cuadros distintos): ahí, negro.
+    inside *= step(0.0, t.x) * step(t.x, 1.0) * step(0.0, t.y) * step(t.y, 1.0);
     t = clamp(t, crop.xy + 0.5 * uTexel, crop.xy + crop.zw - 0.5 * uTexel);
     return texture2D(uMap, t).rgb * inside;
   }
@@ -101,6 +103,10 @@ const DEFAULT_VIEW_PARAMS = Object.freeze({
   contrast: 1,
   panX: 0, // encuadre compartido, en fracción de la región
   panY: 0,
+  rightScale: 1, // dos videos: tamaño relativo del derecho (ver alignPair.js)
+  rightX: 0, // dos videos: desplazamiento del recorte del derecho (UV)
+  rightY: 0,
+  frame: [0, 0, 1], // dos videos: cuadro común (x, y, tamaño) dentro del izquierdo
 });
 
 const EYE_GAP_PX = 2; // separación visible entre regiones en el Studio
@@ -192,16 +198,20 @@ export class StereoView {
 
     // Para video se usa VideoTexture: Three.js no puede reservar la textura de un
     // <video> con una Texture normal porque width/height del elemento valen 0.
-    const texture = content.kind === 'video'
-      ? new THREE.VideoTexture(content.source)
-      : new THREE.Texture(content.source);
-    texture.colorSpace = THREE.NoColorSpace; // se muestra tal cual, sin conversión
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.generateMipmaps = false;
-    texture.needsUpdate = true;
+    const makeTexture = (source) => {
+      const texture = content.kind === 'video' ? new THREE.VideoTexture(source) : new THREE.Texture(source);
+      texture.colorSpace = THREE.NoColorSpace; // se muestra tal cual, sin conversión
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      texture.needsUpdate = true;
+      return texture;
+    };
 
-    this.texture = texture;
+    this.texture = makeTexture(content.source);
+    // Dos videos (uno por ojo): el segundo tiene su propia textura.
+    this.textureR = content.right ? makeTexture(content.right.source) : null;
+    const texture = this.texture;
     this.content = content;
     this.layout = layout;
     for (const material of this.materials) {
@@ -241,6 +251,8 @@ export class StereoView {
       this.texture.dispose();
       this.texture = null;
     }
+    this.textureR?.dispose();
+    this.textureR = null;
     for (const material of this.materials) material.uniforms.uMap.value = null;
     this.content = null;
     if (redraw) this.renderNow();
@@ -295,6 +307,8 @@ export class StereoView {
     const { source: media, kind, width: srcW, height: srcH } = this.content;
     // El video necesita volver a subirse a la GPU en cada dibujo para mostrar el cuadro actual.
     if (kind === 'video' && media.readyState >= 2) this.texture.needsUpdate = true;
+    const pair = this.textureR ? this.content.right : null;
+    if (pair && pair.source.readyState >= 2) this.textureR.needsUpdate = true;
 
     const p = this.params;
     const isSbs = this.layout === 'sbs';
@@ -315,7 +329,27 @@ export class StereoView {
       u.uShiftA.value.set(0, 0);
       u.uShiftB.value.set(0, 0);
       u.uSynthB.value = 0;
-      if (isSbs) {
+      u.uMap.value = this.texture;
+      u.uTexel.value.set(1 / srcW, 1 / srcH);
+      if (isSbs && pair) {
+        // Dos videos: cada ojo ve el suyo; el derecho se recorta para igualar al izquierdo.
+        // El cuadro común recorta los dos por igual; el derecho además se iguala al izquierdo.
+        const usesRight = (index === 1) !== p.swap;
+        const [fx, fy, fs] = p.frame;
+        if (usesRight) {
+          const fw = (srcW / srcH) / (pair.width / pair.height) / p.rightScale;
+          const fh = 1 / p.rightScale;
+          const cx = 0.5 - fw / 2 + p.rightX;
+          const cy = 0.5 - fh / 2 + p.rightY;
+          u.uMap.value = this.textureR;
+          u.uTexel.value.set(1 / pair.width, 1 / pair.height);
+          u.uCropA.value.set(cx + fx * fw, cy + fy * fh, fs * fw, fs * fh);
+        } else {
+          u.uCropA.value.set(fx, fy, fs, fs);
+        }
+        u.uSynthA.value = 0;
+        u.uComposite.value = 0;
+      } else if (isSbs) {
         // Una vista por región: izquierda = mitad izquierda, salvo "Intercambiar ojos" (RN-11, RN-12).
         u.uCropA.value.set(...cropOf((index === 0) !== p.swap));
         u.uSynthA.value = p.source === '2d' ? direction * synth : 0;
