@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0e0d">
+  <meta name="description" content="StereoVision Studio 3D: importa, calibra y visualiza imágenes anaglifo, imágenes SBS y videos SBS, con modo VR para celular.">
+  <title>StereoVision Studio 3D</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/img/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=Martian+Mono:wdth,wght@75..112.5,300..600&display=swap">
+  <link rel="stylesheet" href="./assets/css/styles.css">
+
+  <!-- Three.js se carga como módulo ES desde un CDN; la versión queda fija. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="intro-open">
+  <a class="skip-link" href="#stage">Saltar al visor</a>
+
+  <!-- Iconos compartidos: un solo trazo, dibujados para el Studio -->
+  <svg width="0" height="0" class="sr-only" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-anaglyph" viewBox="0 0 48 32">
+        <rect x="6" y="5" width="22" height="22" rx="2" fill="var(--eye-l)"/>
+        <rect x="20" y="5" width="22" height="22" rx="2" fill="var(--eye-r)" style="mix-blend-mode:screen"/>
+      </symbol>
+      <symbol id="i-sbs" viewBox="0 0 48 32">
+        <rect x="3" y="6" width="19" height="20" rx="2" fill="none" stroke="var(--eye-l)" stroke-width="2"/>
+        <rect x="26" y="6" width="19" height="20" rx="2" fill="none" stroke="var(--eye-r)" stroke-width="2"/>
+        <path d="M8 21l4-5 3 3 2-2 3 4M31 21l4-5 3 3 2-2 3 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-video" viewBox="0 0 48 32">
+        <rect x="3" y="6" width="19" height="20" rx="2" fill="none" stroke="var(--eye-l)" stroke-width="2"/>
+        <rect x="26" y="6" width="19" height="20" rx="2" fill="none" stroke="var(--eye-r)" stroke-width="2"/>
+        <path d="M10 12v8l6-4zM33 12v8l6-4z" fill="currentColor"/>
+      </symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24">
+        <path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24">
+        <path d="M12 15V4M7 9l5-5 5 5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24">
+        <rect x="5" y="10.5" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      </symbol>
+      <symbol id="i-vr" viewBox="0 0 24 24">
+        <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h13A2.5 2.5 0 0 1 21 8.5v7a2.5 2.5 0 0 1-2.5 2.5h-3.2l-2.2-3h-2.2l-2.2 3H5.5A2.5 2.5 0 0 1 3 15.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <circle cx="8" cy="11.5" r="1.6" fill="currentColor"/><circle cx="16" cy="11.5" r="1.6" fill="currentColor"/>
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M12 4v11M7 10l5 5 5-5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24">
+        <path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <!-- ============ Portada ============ -->
+  <section class="intro" id="intro" aria-labelledby="intro-title">
+    <div class="intro-bar">
+      <span class="wordmark">
+        <img src="./assets/img/favicon.svg" alt="" width="22" height="22">
+        StereoVision Studio&nbsp;3D
+      </span>
+      <span class="osd-row">
+        <span class="tally" aria-hidden="true"></span>
+        <span>STBY</span>
+        <span class="tc" id="intro-tc" aria-hidden="true">00:00:00:00</span>
+      </span>
+    </div>
+
+    <div class="intro-frame" id="intro-frame">
+      <span class="framelines" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="bars" aria-hidden="true"></span>
+      <span class="osd osd-tl" aria-hidden="true">Desplazamiento <b id="intro-disparity">6.0&nbsp;%</b></span>
+      <span class="osd osd-tr" aria-hidden="true"><i class="dot-l"></i>L <i class="dot-r"></i>R</span>
+
+      <div class="intro-copy">
+        <h1 class="stereo-title" id="intro-title">
+          <span class="sr-only">StereoVision Studio 3D</span>
+          <span class="st-layer st-l" aria-hidden="true">StereoVision</span>
+          <span class="st-layer st-r" aria-hidden="true">StereoVision</span>
+          <span class="st-layer st-w" aria-hidden="true">StereoVision</span>
+        </h1>
+        <p class="intro-sub">Studio 3D</p>
+        <p class="intro-lede">Importa, calibra y mira tus imágenes y videos estereoscópicos. Después ponte las gafas: el modo VR convierte tu celular en visor.</p>
+      </div>
+    </div>
+
+    <div class="intro-pick">
+      <h2 class="pick-title" id="pick-title"><span class="step">1</span> Elige qué vas a ver</h2>
+      <div class="inputs" role="group" aria-labelledby="pick-title">
+        <button type="button" class="input-slate" data-module="anaglyph">
+          <svg class="slate-icon" aria-hidden="true"><use href="#i-anaglyph"/></svg>
+          <span class="slate-text">
+            <span class="slate-name">Anaglifo</span>
+            <span class="slate-sub">Ábrelo o créalo desde tu foto</span>
+            <span class="slate-spec">JPG · PNG · WEBP</span>
+          </span>
+          <svg class="slate-go" aria-hidden="true"><use href="#i-arrow"/></svg>
+        </button>
+        <button type="button" class="input-slate" data-module="sbs-image">
+          <svg class="slate-icon" aria-hidden="true"><use href="#i-sbs"/></svg>
+          <span class="slate-text">
+            <span class="slate-name">Imagen SBS</span>
+            <span class="slate-sub">Para gafas VR, o créala desde tu foto</span>
+            <span class="slate-spec">JPG · PNG · WEBP · VR</span>
+          </span>
+          <svg class="slate-go" aria-hidden="true"><use href="#i-arrow"/></svg>
+        </button>
+        <button type="button" class="input-slate" data-module="sbs-video">
+          <svg class="slate-icon" aria-hidden="true"><use href="#i-video"/></svg>
+          <span class="slate-text">
+            <span class="slate-name">Video SBS</span>
+            <span class="slate-sub">Video lado a lado con reproducción</span>
+            <span class="slate-spec">MP4 H.264 · VR</span>
+          </span>
+          <svg class="slate-go" aria-hidden="true"><use href="#i-arrow"/></svg>
+        </button>
+      </div>
+      <button type="button" class="link-quiet" id="intro-skip">Entrar al Studio sin elegir</button>
+    </div>
+
+    <div class="intro-credit">
+      <p>José Alonso Godinez Franco · N.C. 24200197 · Instituto Tecnológico de Pachuca · ITICS</p>
+      <p><svg class="ico-inline" aria-hidden="true"><use href="#i-lock"/></svg> Todo se procesa en tu dispositivo</p>
+    </div>
+  </section>
+
+  <div class="studio" id="studio">
+    <!-- ============ Encabezado ============ -->
+    <header class="topbar">
+      <button type="button" class="brand" id="btn-home" aria-label="Volver a la portada">
+        <img src="./assets/img/favicon.svg" alt="" width="26" height="26">
+        <span class="brand-text">
+          <span class="brand-name">StereoVision Studio&nbsp;3D</span>
+          <span class="tagline">Edición, calibración y visualización estereoscópica</span>
+        </span>
+      </button>
+      <div class="topbar-state" aria-label="Estado de la sesión">
+        <span class="chip" id="module-chip" data-empty="true">Sin módulo</span>
+        <span class="pill" id="status-pill" data-status="sin-archivo">
+          <span class="pill-dot" aria-hidden="true"></span>
+          <span id="status-text">Sin archivo</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- ============ Panel izquierdo: módulo e importación ============ -->
+    <aside class="panel panel-left" aria-label="Módulo e importación">
+      <section class="block" data-tone="module">
+        <h2><span class="step">1</span> Elige el módulo</h2>
+        <fieldset class="modules">
+          <legend class="sr-only">Tipo de contenido</legend>
+          <label class="module-option">
+            <input type="radio" name="module" value="anaglyph" id="mod-anaglyph">
+            <span class="module-card">
+              <svg class="module-icon" aria-hidden="true"><use href="#i-anaglyph"/></svg>
+              <span class="module-name">Anaglifo</span>
+              <span class="module-sub">Imagen rojo-cian</span>
+              <span class="module-lamp" aria-hidden="true"></span>
+            </span>
+          </label>
+          <label class="module-option">
+            <input type="radio" name="module" value="sbs-image" id="mod-sbs-image">
+            <span class="module-card">
+              <svg class="module-icon" aria-hidden="true"><use href="#i-sbs"/></svg>
+              <span class="module-name">Imagen SBS</span>
+              <span class="module-sub">Lado a lado</span>
+              <span class="module-lamp" aria-hidden="true"></span>
+            </span>
+          </label>
+          <label class="module-option">
+            <input type="radio" name="module" value="sbs-video" id="mod-sbs-video">
+            <span class="module-card">
+              <svg class="module-icon" aria-hidden="true"><use href="#i-video"/></svg>
+              <span class="module-name">Video SBS</span>
+              <span class="module-sub">MP4 lado a lado</span>
+              <span class="module-lamp" aria-hidden="true"></span>
+            </span>
+          </label>
+        </fieldset>
+        <p class="note" id="module-desc">Elige primero qué tipo de contenido vas a ver. Después podrás importar el archivo.</p>
+      </section>
+
+      <section class="block" data-tone="file">
+        <h2><span class="step">2</span> Importa el archivo</h2>
+        <input type="file" id="file-input" class="sr-only" tabindex="-1" aria-hidden="true">
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" id="btn-import" disabled>
+            <svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg>Importar archivo…
+          </button>
+          <button type="button" class="btn" id="btn-sample" disabled>Cargar muestra</button>
+        </div>
+        <p class="note" id="import-hint">Paso 1: elige un módulo para habilitar la importación.</p>
+      </section>
+
+      <section class="block" data-tone="file">
+        <h2>Archivo activo</h2>
+        <p class="note" id="file-empty">Todavía no hay ningún archivo cargado.</p>
+        <dl class="fileinfo" id="file-info" hidden>
+          <div><dt>Nombre</dt><dd id="fi-name"></dd></div>
+          <div><dt>Formato</dt><dd id="fi-format"></dd></div>
+          <div><dt>Tamaño</dt><dd id="fi-size"></dd></div>
+          <div><dt>Resolución</dt><dd id="fi-res"></dd></div>
+          <div id="fi-duration-row" hidden><dt>Duración</dt><dd id="fi-duration"></dd></div>
+          <div><dt>Origen</dt><dd id="fi-source"></dd></div>
+        </dl>
+        <button type="button" class="btn btn-quiet" id="btn-clear" disabled>Quitar archivo</button>
+      </section>
+    </aside>
+
+    <!-- ============ Área central: visor ============ -->
+    <main class="workspace">
+      <div class="stage" id="stage" tabindex="-1" data-layout="none">
+        <canvas id="view-canvas" aria-label="Visor estereoscópico" role="img"></canvas>
+
+        <span class="framelines" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span class="osd osd-tl stage-osd" aria-hidden="true"></span>
+        <span class="osd stage-help" aria-hidden="true"><span class="help-mouse">Rueda: zoom · Arrastra: mover · Doble clic: centrar</span><span class="help-touch">Pellizca: zoom · Desliza: mover · Doble toque: centrar</span></span>
+
+        <span class="eye-label eye-left" id="eye-label-left" hidden></span>
+        <span class="eye-label eye-right" id="eye-label-right" hidden></span>
+
+        <div class="overlay overlay-empty" id="stage-empty">
+          <div class="overlay-box">
+            <h2 id="stage-empty-title">Bienvenido a StereoVision Studio 3D</h2>
+            <p id="stage-empty-text">Paso 1: elige un módulo en el panel izquierdo. Paso 2: importa tu archivo.</p>
+            <div class="overlay-actions">
+              <button type="button" class="btn btn-primary" data-proxy="btn-import" disabled>
+                <svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg>Importar archivo…
+              </button>
+              <button type="button" class="btn" data-proxy="btn-sample" disabled>Cargar muestra</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="overlay overlay-loading" id="stage-loading" hidden role="status">
+          <div class="overlay-box">
+            <span class="spinner" aria-hidden="true"></span>
+            <p id="stage-loading-text">Preparando el archivo…</p>
+          </div>
+        </div>
+
+        <div class="drop-hint" aria-hidden="true"><span>Suelta el archivo para importarlo</span></div>
+
+        <!-- Visor VR: avisos y controles táctiles -->
+        <div class="vr-warning" id="vr-warning" role="alert">
+          <div class="vr-warning-box">
+            <span class="rotate-icon" aria-hidden="true"></span>
+            <p><strong>Gira el teléfono a horizontal</strong></p>
+            <p>El visor para gafas necesita la pantalla en posición horizontal.</p>
+          </div>
+        </div>
+        <p class="vr-hint" id="vr-hint" hidden role="status"></p>
+        <!-- Asistente de las gafas: una mira por ojo que se fusiona en una cruz -->
+        <div class="vr-wizard" id="vr-wizard" hidden aria-live="polite">
+          <div class="wz-eye wz-left"><div class="wz-anchor"><span class="wz-target"><i></i></span><div class="wz-card"><p class="wz-step"></p><p class="wz-value"></p><p class="wz-hint"></p><p class="wz-zones"><span>izquierda: menos</span><span class="wz-next"></span><span>derecha: más</span></p></div></div></div>
+          <div class="wz-eye wz-right"><div class="wz-anchor"><span class="wz-target"><i></i></span><div class="wz-card"><p class="wz-step"></p><p class="wz-value"></p><p class="wz-hint"></p><p class="wz-zones"><span>izquierda: menos</span><span class="wz-next"></span><span>derecha: más</span></p></div></div></div>
+        </div>
+        <div class="vr-controls">
+          <span class="vr-group">
+            <button type="button" class="btn vr-btn" id="vr-exit" aria-label="Salir del modo VR">Salir de VR</button>
+            <button type="button" class="btn vr-btn" id="vr-calibrate">Calibrar gafas</button>
+          </span>
+          <button type="button" class="btn vr-btn vr-play" id="vr-play" hidden aria-label="Reproducir video" data-state="paused">
+            <span class="label">Reproducir</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Controles de reproducción del video SBS -->
+      <section class="transport" id="transport" aria-label="Controles de reproducción" hidden>
+        <button type="button" class="btn btn-icon" id="t-play" data-state="paused" aria-label="Reproducir" disabled>
+          <svg class="ico ico-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg>
+          <svg class="ico ico-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5h4v15H6zM14 4.5h4v15h-4z"/></svg>
+          <span class="label">Reproducir</span>
+        </button>
+        <button type="button" class="btn" id="t-back" aria-label="Retroceder 10 segundos" disabled>−10&nbsp;s</button>
+        <button type="button" class="btn" id="t-fwd" aria-label="Adelantar 10 segundos" disabled>+10&nbsp;s</button>
+        <span class="time" id="t-time" role="timer" aria-label="Tiempo actual y duración">0:00 / 0:00</span>
+        <label class="sr-only" for="t-seek">Posición del video</label>
+        <input type="range" id="t-seek" class="seek" min="0" max="1000" step="1" value="0" disabled>
+        <button type="button" class="btn" id="t-mute" aria-pressed="false" aria-label="Silenciar o activar sonido" disabled>
+          <span class="label">Sonido</span>
+        </button>
+        <label class="sr-only" for="t-volume">Volumen</label>
+        <input type="range" id="t-volume" class="volume" min="0" max="100" step="1" value="100" disabled>
+      </section>
+
+      <p class="message" id="message" role="status" aria-live="polite" data-kind="none" hidden></p>
+    </main>
+
+    <!-- ============ Panel derecho: calibración y VR ============ -->
+    <aside class="panel panel-right" aria-label="Calibración y modo VR">
+      <section class="block" data-tone="cal">
+        <div class="block-head">
+          <h2><span class="step">3</span> Calibra</h2>
+          <button type="button" class="btn btn-quiet btn-small" id="btn-reset" disabled>
+            <svg class="ico" aria-hidden="true"><use href="#i-reset"/></svg>Restablecer
+          </button>
+        </div>
+        <p class="note" id="cal-empty">Los controles se habilitan al cargar un archivo. Solo cambian cómo se ve en pantalla: el archivo original no se modifica.</p>
+        <div id="calibration" class="calibration" hidden></div>
+        <button type="button" class="btn btn-download" id="btn-download" hidden disabled>
+          <svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span class="label">Descargar (JPG)</span>
+        </button>
+      </section>
+
+      <section class="block" data-tone="vr">
+        <h2><span class="step">4</span> Modo VR</h2>
+        <button type="button" class="btn btn-primary btn-vr" id="btn-vr" disabled>
+          <svg class="ico" aria-hidden="true"><use href="#i-vr"/></svg>Entrar al modo VR
+        </button>
+        <p class="note" id="vr-note">El modo VR se habilita con una imagen SBS o un video SBS importado.</p>
+      </section>
+    </aside>
+
+    <!-- ============ Pie ============ -->
+    <footer class="footer">
+      <p>José Alonso Godinez Franco · N.C. 24200197 · Instituto Tecnológico de Pachuca · ITICS</p>
+      <p><svg class="ico-inline" aria-hidden="true"><use href="#i-lock"/></svg> Todo se procesa en tu dispositivo; ningún archivo se envía a un servidor.</p>
+    </footer>
+  </div>
+
+  <!-- Contenedor técnico del <video> (nunca visible): un solo elemento alimenta a los dos ojos. -->
+  <div id="video-holder" class="video-holder" aria-hidden="true"></div>
+
+  <noscript>
+    <p class="noscript">StereoVision Studio 3D necesita JavaScript activado para funcionar.</p>
+  </noscript>
+
+  <script type="module" src="./assets/js/main.js"></script>
+</body>
+</html>
