@@ -40,14 +40,19 @@ const FRAGMENT_SHADER = /* glsl */ `
   uniform float uSynthA;
   uniform float uSynthB;
   uniform float uComposite;
+  uniform sampler2D uDepth;
+  uniform float uHasDepth;
+  uniform float uPlane;
   uniform vec2 uTexel;
   uniform float uBrightness;
   uniform float uContrast;
   varying vec2 vUv;
 
-  // Relieve aproximado de una foto normal: el suelo (abajo) y el centro quedan
-  // cerca; el cielo (arriba) queda lejos. 0 = plano de la pantalla.
+  // Cuánto se acerca cada punto (0 = plano de la pantalla, positivo = sale).
+  // Con mapa de profundidad (IA, en el dispositivo) es la profundidad real de la
+  // foto; sin él, un relieve aproximado: abajo y al centro cerca, arriba lejos.
   float nearness(vec2 e) {
+    if (uHasDepth > 0.5) return texture2D(uDepth, vec2(e.x, 1.0 - e.y)).r - uPlane;
     float ground = 0.5 - e.y;
     float subject = 0.32 - length((e - vec2(0.5, 0.45)) * vec2(1.0, 1.25));
     return 0.65 * ground + 0.35 * subject;
@@ -56,7 +61,13 @@ const FRAGMENT_SHADER = /* glsl */ `
   vec3 sampleView(vec2 uv, vec4 crop, vec2 shift, float synth) {
     vec2 e = uv + shift;
     float inside = step(0.0, e.x) * step(e.x, 1.0) * step(0.0, e.y) * step(e.y, 1.0);
-    e.x += synth * nearness(e);
+    if (synth != 0.0) {
+      // Busca de qué punto de la foto viene este píxel (x_origen = x + s·d(x_origen)):
+      // unas iteraciones bastan y evitan que los bordes del sujeto se dupliquen.
+      float sx = e.x;
+      for (int i = 0; i < 4; i++) sx = e.x + synth * nearness(vec2(clamp(sx, 0.0, 1.0), e.y));
+      e.x = sx;
+    }
     e = clamp(e, 0.0, 1.0);
     vec2 t = crop.xy + e * crop.zw;
     t = clamp(t, crop.xy + 0.5 * uTexel, crop.xy + crop.zw - 0.5 * uTexel);
@@ -66,8 +77,12 @@ const FRAGMENT_SHADER = /* glsl */ `
   void main() {
     vec3 color = sampleView(vUv, uCropA, uShiftA, uSynthA);
     if (uComposite > 0.5) {
+      // Mezcla Dubois (rojo-cian): reparte el color entre los dos filtros para
+      // que cada ojo reciba su vista con menos fantasmas que el rojo/cian puro.
       vec3 b = sampleView(vUv, uCropB, uShiftB, uSynthB);
-      color = vec3(color.r, b.g, b.b);
+      mat3 left = mat3(0.456, -0.040, -0.015, 0.500, -0.038, -0.021, 0.176, -0.016, -0.005);
+      mat3 right = mat3(-0.043, 0.378, -0.072, -0.088, 0.734, -0.113, -0.002, -0.018, 1.226);
+      color = left * color + right * b;
     }
     color = (color - 0.5) * uContrast + 0.5 + uBrightness;
     gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
@@ -89,7 +104,8 @@ const DEFAULT_VIEW_PARAMS = Object.freeze({
 });
 
 const EYE_GAP_PX = 2; // separación visible entre regiones en el Studio
-const MAX_SYNTH = 0.035; // disparidad máxima del relieve simulado (fracción del ancho)
+const MAX_SYNTH = 0.035; // disparidad máxima del relieve aproximado (fracción del ancho)
+const MAX_SYNTH_DEPTH = 0.035; // con mapa de profundidad real: disparidad cómoda a 50 %
 const EXPORT_MAX_PX = 8192; // límite seguro de canvas en teléfonos
 
 function createEyeMaterial() {
@@ -105,6 +121,9 @@ function createEyeMaterial() {
       uSynthA: { value: 0 },
       uSynthB: { value: 0 },
       uComposite: { value: 0 },
+      uDepth: { value: null },
+      uHasDepth: { value: 0 },
+      uPlane: { value: 0.35 },
       uTexel: { value: new THREE.Vector2(0, 0) },
       uBrightness: { value: 0 },
       uContrast: { value: 1 },
@@ -192,8 +211,32 @@ export class StereoView {
     this.requestRender();
   }
 
+  /**
+   * Mapa de profundidad de la foto activa (ver depthEstimate.js) o null para
+   * volver al relieve aproximado.
+   */
+  setDepthMap(map) {
+    this.depthTexture?.dispose();
+    this.depthTexture = null;
+    if (map) {
+      const texture = new THREE.DataTexture(map.data, map.width, map.height, THREE.RedFormat, THREE.UnsignedByteType);
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.unpackAlignment = 1; // filas de un byte por píxel: sin relleno
+      texture.needsUpdate = true;
+      this.depthTexture = texture;
+    }
+    for (const material of this.materials) {
+      material.uniforms.uDepth.value = this.depthTexture;
+      material.uniforms.uHasDepth.value = this.depthTexture ? 1 : 0;
+      material.uniforms.uPlane.value = map?.plane ?? 0.35;
+    }
+    this.requestRender();
+  }
+
   /** Libera la textura y deja el canvas limpio. */
   clearContent(redraw = true) {
+    this.setDepthMap(null);
     if (this.texture) {
       this.texture.dispose();
       this.texture = null;
@@ -260,7 +303,8 @@ export class StereoView {
     // Ancho de UNA vista: SBS completo = media textura; Half-SBS se estira al ancho entero.
     const eyeW = p.source === 'sbs' ? srcW / 2 : srcW;
     const cropOf = (leftHalf) => (twoViews ? [leftHalf ? 0 : 0.5, 0, 0.5, 1] : [0, 0, 1, 1]);
-    const synth = (p.depth / 100) * MAX_SYNTH * (p.swap ? -1 : 1);
+    const maxSynth = this.depthTexture ? MAX_SYNTH_DEPTH : MAX_SYNTH;
+    const synth = (p.depth / 100) * maxSynth * (p.swap ? -1 : 1);
 
     regions.forEach((region, index) => {
       const material = this.materials[index];

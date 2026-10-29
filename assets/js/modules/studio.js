@@ -17,6 +17,7 @@
 import { STATUS } from './store.js';
 import { defaultParams, controlOf } from './calibration.js';
 import { analyzeStereo } from './stereoDetect.js';
+import { estimateDepth } from './depthEstimate.js';
 import { ImportError, validateFile, loadImage, loadVideo, extensionOf } from './fileImport.js';
 import { anaglyphModule } from './anaglyph.js';
 import { sbsImageModule } from './sbsImage.js';
@@ -53,6 +54,42 @@ export function createStudio({ store, view, ui, calibration }) {
     store.set({ params });
     calibration.sync(params);
     pushParamsToView();
+    if (key === 'source' && value === '2d') ensureDepth();
+  }
+
+  /* ---------- Profundidad real para fotos normales ---------- */
+  /**
+   * Calcula (una vez por foto) el mapa de profundidad con IA en el dispositivo.
+   * Mientras tanto se ve el relieve aproximado; si falla, se queda ese.
+   */
+  async function ensureDepth() {
+    const current = active;
+    if (!current || current.module.kind !== 'image' || current.depth) return;
+    if (current.depthPending) return;
+    current.depthPending = true;
+    const say = (kind, text) => active === current && store.set({ message: { kind, text } });
+    say('info', 'Calculando la profundidad real de la foto con IA, en tu dispositivo… (la primera vez se descarga el modelo, ≈27 MB)');
+    let lastShown = -1;
+    try {
+      const map = await estimateDepth(current.content.source, {
+        onProgress: (fraction) => {
+          const pct = Math.round(fraction * 100);
+          if (pct >= lastShown + 10) {
+            lastShown = pct;
+            say('info', `Descargando el modelo de profundidad: ${pct} % (solo la primera vez). Tu foto no sale del dispositivo.`);
+          }
+        },
+      });
+      if (active !== current) return;
+      current.depth = map;
+      view.setDepthMap(map);
+      say('ok', 'Profundidad lista: el sujeto sale hacia ti y el fondo queda detrás. Ajusta «Profundidad» a tu gusto.');
+    } catch (error) {
+      console.warn('[StereoVision] Sin mapa de profundidad:', error);
+      say('error', 'No se pudo calcular la profundidad real (revisa tu conexión la primera vez). Se usa un relieve aproximado; puedes reintentar eligiendo otra vez «Foto normal».');
+    } finally {
+      current.depthPending = false;
+    }
   }
 
   function resetParams() {
@@ -80,10 +117,10 @@ export function createStudio({ store, view, ui, calibration }) {
     if (moduleId === 'anaglyph') {
       if (result.anaglyph) return { source: 'original', text: `Es un anaglifo: ponte los lentes rojo-cian y ajusta zoom, brillo y contraste. ${fix}` };
       if (result.sbs) return { source: 'sbs', text: `No es un anaglifo, pero trae dos vistas lado a lado: el Studio creó el anaglifo con ellas (3D real). Ajusta el desplazamiento hasta que se vea cómodo. ${fix}` };
-      return { source: '2d', text: `No es un anaglifo: el Studio lo creó con un relieve simulado. Ponte los lentes rojo-cian y ajusta «Profundidad simulada» y el zoom. ${fix}` };
+      return { source: '2d', text: `No es un anaglifo: el Studio lo crea estimando la profundidad de la foto. Ponte los lentes rojo-cian y ajusta «Profundidad» y el zoom. ${fix}` };
     }
     if (result.sbs) return { source: 'sbs', text: `Imagen SBS lista. Para las gafas, pulsa «Entrar al modo VR» y calibra los lentes. ${fix}` };
-    return { source: '2d', text: `Esta foto no trae dos vistas: el Studio creó el par SBS con un relieve simulado. Ajusta «Profundidad simulada» y entra al modo VR. ${fix}` };
+    return { source: '2d', text: `Esta foto no trae dos vistas: el Studio crea el par SBS estimando su profundidad. Ajusta «Profundidad» y entra al modo VR. ${fix}` };
   }
 
   /* ---------- Encuadre con gestos (zoom y mover) ---------- */
@@ -228,6 +265,7 @@ export function createStudio({ store, view, ui, calibration }) {
       pushParamsToView();
       const controller = module.activate({ content, view, store, ui });
       active = { module, content, controller };
+      if (detected?.source === '2d') queueMicrotask(ensureDepth);
       store.set({
         status: controller.getStatus(),
         file: fileInfo(produced.file, content, produced.sample),

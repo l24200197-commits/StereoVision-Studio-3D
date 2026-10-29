@@ -4,13 +4,14 @@
  * Solo arma las piezas y las conecta; las reglas viven en los módulos:
  *   store → estado · ui → pantalla · calibration → controles · studio → reglas
  *   stereoView → Three.js/WebGL · vrMode → visor VR · intro → portada
- *   stereoDetect → qué trae la foto · gestures → zoom y encuadre · vrWizard → gafas
+ *   stereoDetect → qué trae la foto · depthEstimate → profundidad con IA
+ *   gestures → zoom y encuadre · vrWizard → gafas
  *
  * Todo corre en el navegador: no hay servidor, registro ni envío de archivos.
  */
 import { createStore, createInitialState } from './modules/store.js';
 import { createUi } from './modules/ui.js';
-import { createCalibrationPanel } from './modules/calibration.js';
+import { createCalibrationPanel, controlOf } from './modules/calibration.js';
 import { StereoView } from './modules/stereoView.js';
 import { createStudio, MODULES } from './modules/studio.js';
 import { createVrMode } from './modules/vrMode.js';
@@ -66,6 +67,12 @@ function boot() {
       calibrateButton: ui.els.vrCalibrate,
       wizardRoot: ui.els.vrWizard,
       hintElement: ui.els.vrHint,
+      // El paso «Tamaño» del asistente ajusta el zoom del archivo, viendo la imagen real.
+      scale: {
+        get: () => store.get().params.scale ?? 100,
+        set: (value) => studio.setParam('scale', value),
+        range: () => controlOf(store.get().module, 'scale') ?? { min: 50, max: 200 },
+      },
     });
     attachGestures(ui.els.stage, { store, studio });
 

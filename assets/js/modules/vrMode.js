@@ -20,8 +20,9 @@ import { createVrWizard, loadLens } from './vrWizard.js';
 
 const HIDE_CONTROLS_MS = 4000;
 const HINT_MS = 6000;
+const LONG_PRESS_MS = 650;
 
-export function createVrMode({ store, stage, view, exitButton, calibrateButton, wizardRoot, hintElement }) {
+export function createVrMode({ store, stage, view, exitButton, calibrateButton, wizardRoot, hintElement, scale }) {
   let wakeLock = null;
   let enteredFullscreen = false;
   let hideTimer = 0;
@@ -33,9 +34,10 @@ export function createVrMode({ store, stage, view, exitButton, calibrateButton, 
     stage,
     lens,
     onChange: (value) => view.setLens(value),
+    scale,
     onFinish: () => {
       lens.saved = true;
-      showHint('Calibración de las gafas guardada en este teléfono. Para repetirla, toca la pantalla y usa «Calibrar gafas».');
+      showHint('Calibración guardada. Para repetirla, mantén pulsada la pantalla o usa «Calibrar gafas».');
     },
   });
   function openWizard() {
@@ -110,8 +112,13 @@ export function createVrMode({ store, stage, view, exitButton, calibrateButton, 
     lens = Object.assign(lens, loadLens());
     view.setLens(lens);
 
-    const notes = ['Gira el teléfono a horizontal y colócalo en las gafas. Toca la pantalla para mostrar los controles.'];
-    if (!fullscreen) notes.push('Este navegador no permite pantalla completa; el visor ocupa toda la ventana.');
+    const notes = ['Gira el teléfono a horizontal y colócalo en las gafas. Toca la pantalla para ver los controles; mantén pulsado para calibrar las gafas.'];
+    const standalone = window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
+    if (!fullscreen && !standalone) {
+      notes.push(/iPhone|iPad/.test(navigator.userAgent)
+        ? 'En iPhone, para quitar las barras de Safari: Compartir → «Agregar a inicio» y abre el Studio desde ese icono.'
+        : 'Este navegador no permite pantalla completa; el visor ocupa toda la ventana.');
+    }
     else if (!locked) notes.push('Si la pantalla no gira sola, activa la rotación automática del teléfono.');
     showHint(notes.join(' '));
     // La primera vez, el asistente de las gafas aparece solo.
@@ -148,9 +155,17 @@ export function createVrMode({ store, stage, view, exitButton, calibrateButton, 
   exitButton.addEventListener('click', exit);
   calibrateButton.addEventListener('click', openWizard);
 
+  // Tocar muestra los controles; mantener pulsado (con las gafas puestas) abre el asistente.
+  let pressTimer = 0;
   stage.addEventListener('pointerdown', (event) => {
-    if (store.get().vr && !event.target.closest('button')) showControls();
+    if (!store.get().vr || event.target.closest('button') || wizard.isOpen()) return;
+    showControls();
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(openWizard, LONG_PRESS_MS);
   });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) {
+    stage.addEventListener(type, () => clearTimeout(pressTimer));
+  }
   stage.addEventListener('focusin', () => store.get().vr && showControls());
 
   document.addEventListener('keydown', (event) => {

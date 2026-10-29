@@ -944,3 +944,9 @@ body.vr-active .vr-wizard:not([hidden]) {
 .wz-zones { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 4px; font-size: .66rem; letter-spacing: .04em; color: var(--dim); text-transform: uppercase; font-variation-settings: "wdth" 75; }
 .wz-next { color: #fff; }
 body.vr-active .stage:has(.vr-wizard:not([hidden])) .vr-hint { display: none; }
+
+/* Paso «Tamaño» del asistente: se ve la imagen real detrás y la indicación abajo */
+body.vr-active .vr-wizard.is-content:not([hidden]) { background: transparent; }
+.vr-wizard.is-content .wz-target { display: none; }
+.vr-wizard.is-content .wz-anchor { top: auto; bottom: 14px; transform: translate(calc(-50% + var(--dx, 0px)), 0); }
+.vr-wizard.is-content .wz-card { padding: 8px 12px; border-radius: var(--radius); background: rgba(5, 5, 5, .78); }

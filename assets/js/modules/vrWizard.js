@@ -7,14 +7,15 @@
  * La pantalla se divide en tercios: izquierda = menos, derecha = más (mantén
  * pulsado para avanzar rápido), centro = siguiente paso.
  *
- * Ajusta la separación y la altura de los lentes, que dependen del teléfono y
- * de las gafas, no de la foto: por eso se guardan en el navegador y se aplican a
- * todo lo que se vea en VR, sin tocar la calibración del archivo.
+ * Separación y altura dependen del teléfono y de las gafas, no de la foto: se
+ * guardan en el navegador y valen para todo lo que se vea en VR. El último paso,
+ * Tamaño, se hace viendo la foto o el video real y ajusta el zoom del archivo.
  */
 const STORAGE_KEY = 'svs3d.lens';
 const STEPS = [
   { key: 'x', title: 'Separación', hint: 'Junta las dos líneas en una sola cruz +', step: 0.2, min: -25, max: 25 },
   { key: 'y', title: 'Altura', hint: 'Si la cruz se ve escalonada, nivélala', step: 0.2, min: -10, max: 10 },
+  { key: 'scale', title: 'Tamaño', hint: 'Ajusta hasta ver cómoda la imagen completa', step: 2, content: true },
 ];
 const HOLD_DELAY = 420; // ms antes de repetir al mantener pulsado
 const REPEAT_EVERY = 60; // ms entre repeticiones
@@ -37,7 +38,7 @@ function saveLens(lens) {
   }
 }
 
-export function createVrWizard({ root, stage, lens, onChange, onFinish }) {
+export function createVrWizard({ root, stage, lens, onChange, onFinish, scale }) {
   const eyes = [...root.querySelectorAll('.wz-eye')];
   let active = false;
   let index = 0;
@@ -55,13 +56,19 @@ export function createVrWizard({ root, stage, lens, onChange, onFinish }) {
     });
   }
 
+  /** Valor del paso: la corrección de los lentes o el zoom del archivo. */
+  const read = (step) => (step.content ? scale.get() : lens[step.key]);
+
   function render() {
     const step = STEPS[index];
-    const value = lens[step.key];
+    const value = read(step);
     const last = index === STEPS.length - 1;
+    root.classList.toggle('is-content', Boolean(step.content));
     for (const el of eyes) {
       el.querySelector('.wz-step').textContent = `${index + 1}/${STEPS.length} · ${step.title}`;
-      el.querySelector('.wz-value').textContent = `${value > 0 ? '+' : ''}${value.toFixed(1)} %`;
+      el.querySelector('.wz-value').textContent = step.content
+        ? `${Math.round(value)} %`
+        : `${value > 0 ? '+' : ''}${value.toFixed(1)} %`;
       el.querySelector('.wz-hint').textContent = step.hint;
       el.querySelector('.wz-next').textContent = last ? 'centro: listo' : 'centro: siguiente';
     }
@@ -70,6 +77,12 @@ export function createVrWizard({ root, stage, lens, onChange, onFinish }) {
 
   function adjust(sign) {
     const step = STEPS[index];
+    if (step.content) {
+      const { min, max } = scale.range();
+      scale.set(Math.min(max, Math.max(min, Math.round(scale.get() + sign * step.step))));
+      render();
+      return;
+    }
     const next = Math.round((lens[step.key] + sign * step.step) * 10) / 10;
     lens[step.key] = Math.min(step.max, Math.max(step.min, next));
     onChange({ x: lens.x, y: lens.y });

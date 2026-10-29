@@ -1,0 +1,11 @@
+{
+  "name": "StereoVision Studio 3D",
+  "short_name": "StereoVision",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0e0e0d",
+  "theme_color": "#0e0e0d",
+  "icons": [{ "src": "assets/img/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

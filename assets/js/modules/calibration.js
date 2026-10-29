@@ -39,13 +39,13 @@ const ALIGN = {
 const DEPTH = {
   key: 'depth',
   type: 'range',
-  label: 'Profundidad simulada',
+  label: 'Profundidad',
   min: 0,
   max: 100,
   step: 1,
-  def: 40,
+  def: 50,
   unit: '%',
-  hint: 'Una foto normal no trae dos vistas: el Studio crea un relieve aproximado (abajo y al centro, cerca; arriba, lejos). Súbela poco a poco.',
+  hint: 'Una foto normal no trae dos vistas: el Studio estima con IA, en tu dispositivo, qué está cerca y qué lejos, y crea la otra vista. Súbela para que el sujeto resalte más.',
   when: (p) => p.source === '2d',
 };
 
@@ -89,7 +89,7 @@ export const CALIBRATION = Object.freeze({
       label: 'Tipo de foto',
       def: 'original',
       options: [['original', 'Ya es anaglifo'], ['sbs', 'Par SBS'], ['2d', 'Foto normal']],
-      hint: 'Si tu foto no es anaglifo, el Studio lo crea: desde un par SBS (3D real) o desde una foto normal (relieve simulado).',
+      hint: 'Si tu foto no es anaglifo, el Studio lo crea: desde un par SBS (3D real) o desde una foto normal (profundidad estimada con IA).',
     },
     {
       key: 'scale',
