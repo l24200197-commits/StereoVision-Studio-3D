@@ -70,8 +70,8 @@ export function createIntro({ onEnter } = {}) {
       studio.inert = true;
       document.body.classList.add('intro-open');
     };
-    initial ? update() : withViewTransition(update);
     open = true;
+    const shown = initial ? (update(), Promise.resolve()) : withViewTransition(update);
     window.addEventListener('pointermove', onPointer);
     tickTimecode();
     tcTimer = setInterval(tickTimecode, 1000 / 24);
@@ -84,7 +84,7 @@ export function createIntro({ onEnter } = {}) {
       setTimeout(() => open && animateTo(0, CONVERGE_MS), initial ? 350 : 150);
     }
     // Al volver desde el Studio, el foco regresa a la entrada elegida (no al abrir la página).
-    if (!initial) (slates.find((slate) => slate.dataset.active === 'true') ?? slates[0]).focus({ preventScroll: true });
+    if (!initial) shown.then(() => (slates.find((slate) => slate.dataset.active === 'true') ?? slates[0]).focus({ preventScroll: true }));
   }
 
   function hide(focusTarget) {
@@ -96,8 +96,7 @@ export function createIntro({ onEnter } = {}) {
       intro.hidden = true;
       studio.inert = false;
       document.body.classList.remove('intro-open');
-    });
-    focusTarget?.focus({ preventScroll: true });
+    }).then(() => focusTarget?.focus({ preventScroll: true })); // el Studio deja de ser inerte dentro de la transición
   }
 
   for (const slate of slates) {

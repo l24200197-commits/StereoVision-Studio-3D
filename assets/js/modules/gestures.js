@@ -4,10 +4,15 @@
  * Ratón: rueda = zoom, arrastrar = mover, doble clic = centrar.
  * Táctil: pellizcar = zoom, arrastrar en horizontal = mover, doble toque = centrar
  * (el desplazamiento vertical de la página sigue funcionando: touch-action pan-y).
+ * Teclado (con el visor enfocado): + / − zoom, flechas = mover (Mayús: más
+ * rápido), 0 = centrar, F = pantalla completa, espacio/K = reproducir o
+ * pausar, J/L = ∓10 s, M = silencio. Así nada depende de un ratón o de un dedo.
  * Solo actúa con un archivo cargado y fuera del modo VR; en VR el toque es de
  * los controles y del asistente de las gafas.
  */
-export function attachGestures(stage, { store, studio }) {
+const KEY_ZOOM = 1.1;
+const KEY_PAN = 0.02; // fracción de la región por pulsación
+export function attachGestures(stage, { store, studio, onFullscreen }) {
   const pointers = new Map(); // pointerId → { x, y }
   let pinchDistance = 0;
   let lastTap = 0;
@@ -72,6 +77,33 @@ export function attachGestures(stage, { store, studio }) {
 
   stage.addEventListener('dblclick', (event) => {
     if (usable() && !event.target.closest('button')) studio.recenter();
+  });
+
+  stage.addEventListener('keydown', (event) => {
+    // Solo cuando el foco está en el propio visor: los botones internos conservan su teclado.
+    if (event.target !== stage || !usable() || event.altKey || event.ctrlKey || event.metaKey) return;
+    const pan = event.shiftKey ? KEY_PAN * 5 : KEY_PAN;
+    const actions = {
+      '+': () => studio.zoomBy(KEY_ZOOM),
+      '=': () => studio.zoomBy(KEY_ZOOM),
+      '-': () => studio.zoomBy(1 / KEY_ZOOM),
+      '_': () => studio.zoomBy(1 / KEY_ZOOM),
+      0: () => studio.recenter(),
+      ArrowLeft: () => studio.panBy(-pan, 0),
+      ArrowRight: () => studio.panBy(pan, 0),
+      ArrowUp: () => studio.panBy(0, -pan),
+      ArrowDown: () => studio.panBy(0, pan),
+      f: () => onFullscreen?.(),
+      ' ': () => studio.togglePlayback(),
+      k: () => studio.togglePlayback(),
+      j: () => studio.seekBy(-10),
+      l: () => studio.seekBy(10),
+      m: () => studio.toggleMute(),
+    };
+    const action = actions[event.key.length === 1 ? event.key.toLowerCase() : event.key];
+    if (!action) return;
+    event.preventDefault();
+    action();
   });
 
   // El visor indica cuándo admite gestos (cursor y ayuda en pantalla).

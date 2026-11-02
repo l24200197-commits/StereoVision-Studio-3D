@@ -9,7 +9,7 @@
 import { STATUS, STATUS_LABEL } from './store.js';
 import { FORMATS, formatBytes } from './fileImport.js';
 import { formatTime } from './sbsVideo.js';
-import { flash, reveal } from './motion.js';
+import { flash, reveal, prefersReducedMotion } from './motion.js';
 
 /** Textos propios de cada módulo (lo que espera y cómo se usa). */
 const MODULE_COPY = Object.freeze({
@@ -70,6 +70,22 @@ export function createUi() {
     eyeLeft: $('eye-label-left'),
     eyeRight: $('eye-label-right'),
     message: $('message'),
+    messageText: $('message-text'),
+    messageKind: $('message-kind'),
+    messageAction: $('message-action'),
+    messageClose: $('message-close'),
+    task: $('task'),
+    taskLabel: $('task-label'),
+    taskProgress: $('task-progress'),
+    taskPct: $('task-pct'),
+    taskCancel: $('task-cancel'),
+    toolPlay: $('tool-play'),
+    toolPlaySep: $('tool-play-sep'),
+    toolZoomOut: $('tool-zoom-out'),
+    toolZoomIn: $('tool-zoom-in'),
+    toolZoom: $('tool-zoom'),
+    toolFit: $('tool-fit'),
+    toolFullscreen: $('tool-fullscreen'),
     calibration: $('calibration'),
     calEmpty: $('cal-empty'),
     btnReset: $('btn-reset'),
@@ -127,6 +143,18 @@ export function createUi() {
     els.btnVr.addEventListener('click', handlers.onVr);
     els.vrPlay.addEventListener('click', handlers.onVrPlay);
     els.btnDownload.addEventListener('click', handlers.onDownload);
+    els.taskCancel.addEventListener('click', handlers.onCancelTask);
+    els.messageAction.addEventListener('click', () => shownMessage?.action?.run());
+    els.messageClose.addEventListener('click', handlers.onDismissMessage);
+    els.toolPlay.addEventListener('click', handlers.onVrPlay);
+    els.toolZoomOut.addEventListener('click', () => handlers.onZoom(1 / 1.25));
+    els.toolZoomIn.addEventListener('click', () => handlers.onZoom(1.25));
+    els.toolFit.addEventListener('click', handlers.onFit);
+    els.toolFullscreen.addEventListener('click', handlers.onStageFullscreen);
+    els.toolFullscreen.hidden = !document.fullscreenEnabled; // iPhone no permite pantalla completa de un elemento
+    document.addEventListener('fullscreenchange', () => {
+      els.toolFullscreen.setAttribute('aria-pressed', String(document.fullscreenElement === els.stage));
+    });
 
     // Arrastrar y soltar sobre el visor.
     const stage = els.stage;
@@ -217,10 +245,20 @@ export function createUi() {
     );
   }
 
+  /** En una columna (teléfono) el visor queda arriba de los botones: al cargar, se trae a la vista. */
+  function bringStageIntoView() {
+    const { top, bottom } = els.stage.getBoundingClientRect();
+    if (top >= 0 && bottom <= window.innerHeight) return;
+    els.stage.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  }
+
   let shownFile = null;
   function renderFile(state) {
     const file = state.file;
-    if (file !== shownFile && file) reveal(els.canvas);
+    if (file !== shownFile && file) {
+      reveal(els.canvas);
+      if (!state.vr) bringStageIntoView();
+    }
     shownFile = file;
     els.fileInfo.hidden = !file;
     els.fiEmpty.hidden = Boolean(file);
@@ -272,6 +310,20 @@ export function createUi() {
       els.eyeRight.classList.toggle('is-swapped', swapped);
     }
     els.stage.dataset.layout = module?.layout ?? 'none';
+
+    // Con archivo, el visor entra en el orden de tabulación y admite atajos (gestures.js).
+    els.stage.tabIndex = hasFile && !state.vr ? 0 : -1;
+    const canvasLabel = !hasFile
+      ? 'Visor estereoscópico, sin contenido'
+      : `Visor estereoscópico: ${copy.title}, «${state.file.name}»${module.layout === 'sbs' ? ', una vista por ojo' : ''}`;
+    if (els.canvas.getAttribute('aria-label') !== canvasLabel) els.canvas.setAttribute('aria-label', canvasLabel);
+    setText(els.toolZoom, `${Math.round(state.params.scale ?? 100)} %`);
+    const isVideo = state.module === 'sbs-video' && hasFile;
+    els.toolPlay.hidden = !isVideo;
+    els.toolPlaySep.hidden = !isVideo;
+    const playing = state.status === STATUS.PLAYING;
+    els.toolPlay.dataset.state = playing ? 'playing' : 'paused';
+    els.toolPlay.setAttribute('aria-label', playing ? 'Pausar video' : 'Reproducir video');
   }
 
   function renderTransport(state) {
@@ -322,14 +374,35 @@ export function createUi() {
     );
   }
 
+  /** El tipo de aviso se dice con palabras y con la forma del icono, no solo con el color. */
+  const KIND_LABEL = Object.freeze({ ok: 'Listo: ', info: 'Aviso: ', error: 'Error: ' });
+  let shownMessage = null;
   function renderMessage(state) {
     const message = state.message;
+    shownMessage = message;
     const text = message?.text ?? '';
-    const changed = els.message.textContent !== text;
-    setText(els.message, text);
+    const changed = els.messageText.textContent !== text;
+    setText(els.messageText, text);
+    setText(els.messageKind, KIND_LABEL[message?.kind] ?? '');
     if (changed && text) flash(els.message);
     els.message.dataset.kind = message?.kind ?? 'none';
     els.message.hidden = !message;
+    els.messageAction.hidden = !message?.action;
+    if (message?.action) setText(els.messageAction, message.action.label);
+  }
+
+  function renderTask(state) {
+    const task = state.task;
+    els.task.hidden = !task || state.vr;
+    if (!task) return;
+    setText(els.taskLabel, task.label);
+    if (task.progress == null) {
+      els.taskProgress.removeAttribute('value'); // indeterminado: se sabe que avanza, no cuánto
+      setText(els.taskPct, '');
+    } else {
+      els.taskProgress.value = task.progress;
+      setText(els.taskPct, `${Math.round(task.progress * 100)} %`);
+    }
   }
 
   function render(state, { modules, calibration }) {
@@ -343,6 +416,7 @@ export function createUi() {
     renderTransport(state);
     renderTools(state, modules, calibration);
     renderMessage(state);
+    renderTask(state);
   }
 
   return { els, transport, videoHolder: els.videoHolder, bind, render };

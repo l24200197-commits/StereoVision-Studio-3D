@@ -31,16 +31,20 @@ export function reveal(element) {
 /**
  * Ejecuta un cambio de DOM con una transición de vista (el visor se expande o
  * se recoge desde su sitio) cuando el navegador la ofrece. El cambio siempre se
- * aplica, con o sin animación.
+ * aplica, con o sin animación. Con transición el cambio ocurre un instante
+ * después: la promesa devuelta se cumple cuando ya está aplicado (p. ej. para
+ * mover el foco a algo que antes estaba inerte).
  */
 export function withViewTransition(update) {
-  if (!document.startViewTransition || prefersReducedMotion()) {
+  const lite = document.body.classList.contains('is-lite');
+  if (!document.startViewTransition || prefersReducedMotion() || lite) {
     update();
-    return;
+    return Promise.resolve();
   }
   try {
-    document.startViewTransition(update);
+    return document.startViewTransition(update).updateCallbackDone.catch(() => {});
   } catch {
     update();
+    return Promise.resolve();
   }
 }

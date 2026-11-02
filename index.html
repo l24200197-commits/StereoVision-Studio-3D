@@ -3,6 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!--
+    Política de seguridad: solo se ejecuta código de este sitio y de jsDelivr (Three.js y,
+    si se usa la profundidad con IA, transformers.js). Las conexiones externas se limitan a
+    descargar ese código y el modelo de IA desde Hugging Face; ningún archivo del usuario se
+    envía. El hash autoriza únicamente el importmap de abajo (si se edita, hay que recalcularlo:
+    npm run csp-hash).
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval' 'sha256-2Ai/0kGh+3MOWSeMx/v5t6F3Xkx+IKK1KzAgiM0bKNc='; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#0e0e0d">
   <meta name="description" content="StereoVision Studio 3D: importa, calibra y visualiza imágenes anaglifo, imágenes SBS y videos SBS, con modo VR para celular.">
   <title>StereoVision Studio 3D</title>
@@ -18,12 +27,15 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=Martian+Mono:wdth,wght@75..112.5,300..600&display=swap">
   <link rel="stylesheet" href="./assets/css/styles.css">
 
-  <!-- Three.js se carga como módulo ES desde un CDN; la versión queda fija. -->
+  <!-- Three.js se carga como módulo ES desde un CDN; versión fija y, en los navegadores que lo admiten, integridad verificada. -->
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"
+      },
+      "integrity": {
+        "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js": "sha384-wyxAlyAVVsyc7KN24a4+m1tMTC2BwrjQyLgLStDaUBDmwK+gWUMULWHSS0NRoZKv",
+        "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.core.js": "sha384-r1q8Si7xFBrvMv3Q4yjQkKhkYZ2lp+wn/bPPzNZTsc8DY4uPJmm2vheuz1Yn+8m8"
       }
     }
   </script>
@@ -36,7 +48,7 @@
     <defs>
       <symbol id="i-anaglyph" viewBox="0 0 48 32">
         <rect x="6" y="5" width="22" height="22" rx="2" fill="var(--eye-l)"/>
-        <rect x="20" y="5" width="22" height="22" rx="2" fill="var(--eye-r)" style="mix-blend-mode:screen"/>
+        <rect class="blend-screen" x="20" y="5" width="22" height="22" rx="2" fill="var(--eye-r)"/>
       </symbol>
       <symbol id="i-sbs" viewBox="0 0 48 32">
         <rect x="3" y="6" width="19" height="20" rx="2" fill="none" stroke="var(--eye-l)" stroke-width="2"/>
@@ -67,6 +79,30 @@
       </symbol>
       <symbol id="i-reset" viewBox="0 0 24 24">
         <path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24">
+        <path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-fit" viewBox="0 0 24 24">
+        <path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
+      </symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24">
+        <path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-keys" viewBox="0 0 24 24">
+        <rect x="2.5" y="6" width="19" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M8 14h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24">
+        <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
       </symbol>
     </defs>
   </svg>
@@ -146,19 +182,28 @@
   <div class="studio" id="studio">
     <!-- ============ Encabezado ============ -->
     <header class="topbar">
-      <button type="button" class="brand" id="btn-home" aria-label="Volver a la portada">
+      <button type="button" class="brand" id="btn-home" title="Volver a la portada">
         <img src="./assets/img/favicon.svg" alt="" width="26" height="26">
         <span class="brand-text">
           <span class="brand-name">StereoVision Studio&nbsp;3D</span>
           <span class="tagline">Edición, calibración y visualización estereoscópica</span>
+          <span class="sr-only"> — volver a la portada</span>
         </span>
       </button>
-      <div class="topbar-state" aria-label="Estado de la sesión">
+      <div class="topbar-state" role="group" aria-label="Estado de la sesión">
         <span class="chip" id="module-chip" data-empty="true">Sin módulo</span>
         <span class="pill" id="status-pill" data-status="sin-archivo">
           <span class="pill-dot" aria-hidden="true"></span>
           <span id="status-text">Sin archivo</span>
         </span>
+      </div>
+      <div class="topbar-tools">
+        <button type="button" class="icon-btn" id="btn-shortcuts" aria-haspopup="dialog" aria-controls="dlg-shortcuts" title="Atajos de teclado">
+          <svg class="ico" aria-hidden="true"><use href="#i-keys"/></svg><span class="sr-only">Atajos de teclado</span>
+        </button>
+        <button type="button" class="icon-btn" id="btn-settings" aria-haspopup="dialog" aria-controls="dlg-settings" title="Ajustes">
+          <svg class="ico" aria-hidden="true"><use href="#i-gear"/></svg><span class="sr-only">Ajustes</span>
+        </button>
       </div>
     </header>
 
@@ -231,8 +276,9 @@
 
     <!-- ============ Área central: visor ============ -->
     <main class="workspace">
-      <div class="stage" id="stage" tabindex="-1" data-layout="none">
+      <div class="stage" id="stage" tabindex="-1" data-layout="none" aria-describedby="stage-keys">
         <canvas id="view-canvas" aria-label="Visor estereoscópico" role="img"></canvas>
+        <p class="sr-only" id="stage-keys">Con el visor enfocado: más y menos para zoom, flechas para mover el encuadre, 0 para centrar y espacio para reproducir o pausar el video.</p>
 
         <span class="framelines" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span class="osd osd-tl stage-osd" aria-hidden="true"></span>
@@ -262,6 +308,21 @@
         </div>
 
         <div class="drop-hint" aria-hidden="true"><span>Suelta el archivo para importarlo</span></div>
+
+        <!-- Herramientas del visor: lo mismo que los gestos, al alcance de cualquier puntero o del teclado -->
+        <div class="stage-tools" role="toolbar" aria-label="Encuadre del visor">
+          <button type="button" class="tool" id="tool-play" aria-label="Reproducir video" title="Reproducir o pausar (espacio)" data-state="paused" hidden>
+            <svg class="ico ico-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg>
+            <svg class="ico ico-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5h4v15H6zM14 4.5h4v15h-4z"/></svg>
+          </button>
+          <span class="tool-sep" id="tool-play-sep" aria-hidden="true" hidden></span>
+          <button type="button" class="tool" id="tool-zoom-out" aria-label="Alejar" title="Alejar (−)"><svg class="ico" aria-hidden="true"><use href="#i-minus"/></svg></button>
+          <output class="tool-readout" id="tool-zoom" aria-label="Zoom actual">100 %</output>
+          <button type="button" class="tool" id="tool-zoom-in" aria-label="Acercar" title="Acercar (+)"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg></button>
+          <span class="tool-sep" aria-hidden="true"></span>
+          <button type="button" class="tool" id="tool-fit" aria-label="Centrar y ajustar" title="Centrar y ajustar (0)"><svg class="ico" aria-hidden="true"><use href="#i-fit"/></svg></button>
+          <button type="button" class="tool" id="tool-fullscreen" aria-label="Visor a pantalla completa" aria-pressed="false" title="Pantalla completa (F)"><svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg></button>
+        </div>
 
         <!-- Visor VR: avisos y controles táctiles -->
         <div class="vr-warning" id="vr-warning" role="alert">
@@ -295,8 +356,8 @@
           <svg class="ico ico-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.5h4v15H6zM14 4.5h4v15h-4z"/></svg>
           <span class="label">Reproducir</span>
         </button>
-        <button type="button" class="btn" id="t-back" aria-label="Retroceder 10 segundos" disabled>−10&nbsp;s</button>
-        <button type="button" class="btn" id="t-fwd" aria-label="Adelantar 10 segundos" disabled>+10&nbsp;s</button>
+        <button type="button" class="btn" id="t-back" title="Retroceder 10 segundos (J)" disabled>−10&nbsp;s<span class="sr-only"> (retroceder)</span></button>
+        <button type="button" class="btn" id="t-fwd" title="Adelantar 10 segundos (L)" disabled>+10&nbsp;s<span class="sr-only"> (adelantar)</span></button>
         <span class="time" id="t-time" role="timer" aria-label="Tiempo actual y duración">0:00 / 0:00</span>
         <label class="sr-only" for="t-seek">Posición del video</label>
         <input type="range" id="t-seek" class="seek" min="0" max="1000" step="1" value="0" disabled>
@@ -307,7 +368,21 @@
         <input type="range" id="t-volume" class="volume" min="0" max="100" step="1" value="100" disabled>
       </section>
 
-      <p class="message" id="message" role="status" aria-live="polite" data-kind="none" hidden></p>
+      <!-- Trabajo largo en curso (unir videos, estimar profundidad): avance real y cancelación -->
+      <div class="task" id="task" role="group" aria-label="Trabajo en curso" hidden>
+        <span class="spinner spinner-sm" aria-hidden="true"></span>
+        <p class="task-label" id="task-label" aria-live="polite"></p>
+        <progress id="task-progress" max="1" aria-labelledby="task-label"></progress>
+        <span class="task-pct" id="task-pct" aria-hidden="true"></span>
+        <button type="button" class="btn btn-small" id="task-cancel">Cancelar</button>
+      </div>
+
+      <div class="message" id="message" data-kind="none" hidden>
+        <span class="msg-icon" aria-hidden="true"></span>
+        <p class="msg-text" role="status" aria-live="polite"><span class="sr-only" id="message-kind"></span><span id="message-text"></span></p>
+        <button type="button" class="btn btn-small msg-action" id="message-action" hidden></button>
+        <button type="button" class="icon-btn icon-btn-sm" id="message-close" aria-label="Cerrar aviso" title="Cerrar aviso"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
+      </div>
     </main>
 
     <!-- ============ Panel derecho: calibración y VR ============ -->
@@ -341,6 +416,60 @@
       <p><svg class="ico-inline" aria-hidden="true"><use href="#i-lock"/></svg> Todo se procesa en tu dispositivo; ningún archivo se envía a un servidor.</p>
     </footer>
   </div>
+
+  <!-- ============ Ajustes ============ -->
+  <dialog class="dialog" id="dlg-settings" aria-labelledby="dlg-settings-title">
+    <form method="dialog" class="dialog-box">
+      <header class="dialog-head">
+        <h2 id="dlg-settings-title">Ajustes</h2>
+        <button type="submit" class="icon-btn" aria-label="Cerrar ajustes"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+
+      <fieldset class="dialog-section">
+        <legend>Calidad del visor</legend>
+        <div class="seg seg-wide" role="radiogroup" aria-describedby="quality-note">
+          <label class="seg-opt"><input type="radio" name="quality" value="auto"><span>Automática</span></label>
+          <label class="seg-opt"><input type="radio" name="quality" value="high"><span>Alta</span></label>
+          <label class="seg-opt"><input type="radio" name="quality" value="saver"><span>Ahorro</span></label>
+        </div>
+        <p class="note" id="quality-note"></p>
+        <p class="note">«Ahorro» reduce la densidad de píxeles del lienzo, los efectos de la interfaz y el tamaño máximo de exportación. Nunca cambia la separación, la alineación ni la resolución con la que se lee tu archivo.</p>
+      </fieldset>
+
+      <fieldset class="dialog-section">
+        <legend>Gafas VR</legend>
+        <p class="note" id="lens-note"></p>
+        <button type="button" class="btn" id="btn-forget-lens">Olvidar la calibración de las gafas</button>
+      </fieldset>
+
+      <section class="dialog-section" aria-labelledby="privacy-title">
+        <h3 id="privacy-title">Privacidad</h3>
+        <p class="note">Tus imágenes, videos y audio se procesan solo en este dispositivo y nunca se envían. Este navegador guarda únicamente la calibración de las gafas y la calidad elegida. Si usas «Foto normal», se descarga una vez el modelo de IA desde Hugging Face; la foto no sale de tu equipo.</p>
+      </section>
+    </form>
+  </dialog>
+
+  <!-- ============ Atajos de teclado ============ -->
+  <dialog class="dialog" id="dlg-shortcuts" aria-labelledby="dlg-shortcuts-title">
+    <form method="dialog" class="dialog-box">
+      <header class="dialog-head">
+        <h2 id="dlg-shortcuts-title">Atajos de teclado</h2>
+        <button type="submit" class="icon-btn" aria-label="Cerrar atajos"><svg class="ico" aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <p class="note">Funcionan con el visor enfocado (pulsa Tab hasta el visor o haz clic en él).</p>
+      <dl class="keys">
+        <div><dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Acercar o alejar</dd></div>
+        <div><dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Mover el encuadre (con <kbd>Mayús</kbd>, más rápido)</dd></div>
+        <div><dt><kbd>0</kbd></dt><dd>Centrar y ajustar</dd></div>
+        <div><dt><kbd>F</kbd></dt><dd>Visor a pantalla completa</dd></div>
+        <div><dt><kbd>Espacio</kbd> <kbd>K</kbd></dt><dd>Reproducir o pausar el video</dd></div>
+        <div><dt><kbd>J</kbd> <kbd>L</kbd></dt><dd>Retroceder o adelantar 10 s</dd></div>
+        <div><dt><kbd>M</kbd></dt><dd>Silenciar o activar el sonido</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Salir del modo VR o cerrar un diálogo</dd></div>
+      </dl>
+      <p class="note">En el modo VR, con el asistente de las gafas: <kbd>←</kbd>/<kbd>→</kbd> ajustan y <kbd>Intro</kbd> pasa al paso siguiente.</p>
+    </form>
+  </dialog>
 
   <!-- Contenedor técnico del <video> (nunca visible): un solo elemento alimenta a los dos ojos. -->
   <div id="video-holder" class="video-holder" aria-hidden="true"></div>

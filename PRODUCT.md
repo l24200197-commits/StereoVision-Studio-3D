@@ -19,10 +19,11 @@ Tres formatos estéreo en un solo visor local, con calibración en vivo que no m
 Pantalla de escritorio para calibrar; teléfono en horizontal dentro de gafas para VR. El contenido anaglifo exige un entorno visual neutro que no contamine los filtros rojo/cian.
 
 ## Capabilities and Constraints
-- HTML + CSS + JS (módulos ES) + Three.js 0.180 por CDN; sin backend; publicado en GitHub Pages.
+- HTML + CSS + JS (módulos ES) + Three.js 0.180 por CDN; sin backend ni compilación; publicado en GitHub Pages. Cálculo pesado en Web Workers.
 - Formatos: JPG/JPEG/PNG/WebP y MP4. Muestras en `assets/media/`.
 - Los IDs y clases que usa `assets/js/modules/*.js` son contrato; no cambiarlos.
-- Fuera de alcance: 2D→3D, exportar, giroscopio, SBS vertical, cuentas.
+- Foto normal → 3D solo como **profundidad estimada** por IA en el dispositivo (nunca presentada como profundidad real). Exporta imágenes (JPG), no video.
+- Fuera de alcance: exportar video, giroscopio, SBS vertical, cuentas.
 
 ## Brand Commitments
 - Nombre: StereoVision Studio 3D.

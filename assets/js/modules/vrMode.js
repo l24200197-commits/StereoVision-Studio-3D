@@ -15,14 +15,13 @@
  * La separación de los lentes se calibra con las gafas puestas (vrWizard.js),
  * se guarda en el navegador y solo se aplica mientras el VR está activo.
  */
-import { withViewTransition } from './motion.js';
 import { createVrWizard, loadLens } from './vrWizard.js';
 
 const HIDE_CONTROLS_MS = 4000;
 const HINT_MS = 6000;
 const LONG_PRESS_MS = 650;
 
-export function createVrMode({ store, stage, view, exitButton, calibrateButton, wizardRoot, hintElement, scale }) {
+export function createVrMode({ store, stage, view, exitButton, calibrateButton, wizardRoot, hintElement, scale, returnFocus }) {
   let wakeLock = null;
   let enteredFullscreen = false;
   let hideTimer = 0;
@@ -103,8 +102,11 @@ export function createVrMode({ store, stage, view, exitButton, calibrateButton, 
   /* ---------- Entrar y salir ---------- */
   async function enter() {
     if (store.get().vr) return;
-    withViewTransition(() => store.set({ vr: true }));
+    // Sin transición de vista: combinada con la petición de pantalla completa, Chrome
+    // deja la transición activa y TODOS los toques van a la raíz (el asistente no respondía).
+    store.set({ vr: true });
     showControls();
+    exitButton.focus({ preventScroll: true });
 
     const [fullscreen, locked] = await Promise.all([requestFullscreen(), lockLandscape()]);
     acquireWakeLock();
@@ -127,7 +129,9 @@ export function createVrMode({ store, stage, view, exitButton, calibrateButton, 
 
   async function exit() {
     if (!store.get().vr) return;
-    withViewTransition(() => store.set({ vr: false })); // el contenido y los parámetros no se tocan (RN-16)
+    // El contenido y los parámetros no se tocan (RN-16); el foco vuelve al botón que abrió el VR.
+    store.set({ vr: false });
+    returnFocus?.focus({ preventScroll: true });
     wizard.close();
     view.setLens({ x: 0, y: 0 });
     hideControls();

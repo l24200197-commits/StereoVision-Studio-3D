@@ -14,8 +14,13 @@
  * normal, crear las dos vistas SBS de una foto normal y exportar el resultado.
  *
  * Es la única pieza que habla con WebGL; el resto de módulos le piden cambios.
+ *
+ * Gasto de GPU: dibuja solo cuando algo cambia (requestRender agrupa por
+ * cuadro), sube un cuadro de video solo cuando el video avanzó y aplica el
+ * perfil de calidad (deviceProfile.js) sin tocar la geometría estéreo.
  */
 import * as THREE from 'three';
+import { rightCrop } from '../core/pairGeometry.js';
 
 const VERTEX_SHADER = /* glsl */ `
   varying vec2 vUv;
@@ -58,6 +63,13 @@ const FRAGMENT_SHADER = /* glsl */ `
     return 0.65 * ground + 0.35 * subject;
   }
 
+  // Margen que impide leer la otra mitad del archivo: medio texel a resolución
+  // completa y más cuando, al alejar, se muestrea un nivel de mipmap más grueso.
+  vec2 seamMargin(vec2 t) {
+    vec2 footprint = fwidth(t) / max(uTexel, vec2(1e-6));
+    return 0.5 * uTexel * max(1.0, max(footprint.x, footprint.y));
+  }
+
   vec3 sampleView(vec2 uv, vec4 crop, vec2 shift, float synth) {
     vec2 e = uv + shift;
     float inside = step(0.0, e.x) * step(e.x, 1.0) * step(0.0, e.y) * step(e.y, 1.0);
@@ -72,7 +84,8 @@ const FRAGMENT_SHADER = /* glsl */ `
     vec2 t = crop.xy + e * crop.zw;
     // Un recorte puede salirse del video (dos teléfonos con cuadros distintos): ahí, negro.
     inside *= step(0.0, t.x) * step(t.x, 1.0) * step(0.0, t.y) * step(t.y, 1.0);
-    t = clamp(t, crop.xy + 0.5 * uTexel, crop.xy + crop.zw - 0.5 * uTexel);
+    vec2 margin = seamMargin(t);
+    t = clamp(t, crop.xy + margin, crop.xy + crop.zw - margin);
     return texture2D(uMap, t).rgb * inside;
   }
 
@@ -110,9 +123,9 @@ const DEFAULT_VIEW_PARAMS = Object.freeze({
 });
 
 const EYE_GAP_PX = 2; // separación visible entre regiones en el Studio
-const MAX_SYNTH = 0.035; // disparidad máxima del relieve aproximado (fracción del ancho)
-const MAX_SYNTH_DEPTH = 0.035; // con mapa de profundidad real: disparidad cómoda a 50 %
-const EXPORT_MAX_PX = 8192; // límite seguro de canvas en teléfonos
+const MAX_SYNTH = 0.035; // disparidad máxima del relieve (fracción del ancho), con o sin mapa de profundidad
+const CLEAR_COLOR = 0x050505;
+const DEFAULT_QUALITY = Object.freeze({ pixelRatioCap: 2, mipmaps: true, exportMaxPx: 8192 });
 
 function createEyeMaterial() {
   return new THREE.ShaderMaterial({
@@ -144,9 +157,12 @@ export class StereoView {
   constructor(canvas) {
     this.canvas = canvas;
     // Lanza una excepción si el navegador no ofrece WebGL; main.js la atiende.
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setClearColor(0x050505, 1);
+    // Sin antialias: solo se dibujan rectángulos alineados con la pantalla, así que
+    // el MSAA no mejoraría nada y costaría memoria de GPU en cada región.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'default' });
+    this.renderer.setClearColor(CLEAR_COLOR, 1);
+    this.quality = { ...DEFAULT_QUALITY };
+    this._applyPixelRatio();
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
@@ -168,15 +184,34 @@ export class StereoView {
 
     this.onContextLost = null;
     this.onContextRestored = null;
+    this._listeners = new AbortController();
+    const { signal } = this._listeners;
     canvas.addEventListener('webglcontextlost', (event) => {
       event.preventDefault();
+      cancelAnimationFrame(this._raf);
+      this._raf = 0;
       this.onContextLost?.();
-    });
+    }, { signal });
+    // Three.js recrea su estado al restaurar; se vuelven a subir todas las texturas.
     canvas.addEventListener('webglcontextrestored', () => {
-      if (this.texture) this.texture.needsUpdate = true;
+      for (const texture of [this.texture, this.textureR, this.depthTexture]) if (texture) texture.needsUpdate = true;
       this.requestRender();
       this.onContextRestored?.();
-    });
+    }, { signal });
+  }
+
+  /** Aplica un perfil de calidad (deviceProfile.js) al instante. */
+  setQuality({ pixelRatioCap, mipmaps, exportMaxPx }) {
+    const remake = mipmaps !== this.quality.mipmaps && this.content?.kind === 'image';
+    this.quality = { pixelRatioCap, mipmaps, exportMaxPx };
+    this._applyPixelRatio();
+    if (remake) this._buildTextures(); // cambiar mipmaps exige reservar la textura de nuevo
+    this.resize(this.width, this.height);
+  }
+
+  /** Densidad de píxeles del lienzo: la de la pantalla, con el tope del perfil. */
+  _applyPixelRatio() {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.quality.pixelRatioCap));
   }
 
   get maxTextureSize() {
@@ -188,6 +223,10 @@ export class StereoView {
     return { ...this.renderer.info.memory };
   }
 
+  get pixelRatio() {
+    return this.renderer.getPixelRatio();
+  }
+
   /**
    * Muestra un contenido nuevo. Quien llama ya liberó el anterior con clearContent().
    * @param content { kind, source, width, height }
@@ -195,30 +234,62 @@ export class StereoView {
    */
   setContent(content, layout) {
     this.clearContent(false);
+    this.content = content;
+    this.layout = layout;
+    this._buildTextures();
+    this.requestRender();
+  }
 
-    // Para video se usa VideoTexture: Three.js no puede reservar la textura de un
-    // <video> con una Texture normal porque width/height del elemento valen 0.
+  /**
+   * Crea las texturas del contenido activo. Para video se usa VideoTexture:
+   * Three.js no puede reservar la textura de un <video> con una Texture normal
+   * porque width/height del elemento valen 0. Las imágenes llevan mipmaps
+   * (según el perfil) para verse suaves al alejarlas; el video no, porque
+   * regenerarlos en cada cuadro cuesta más de lo que aporta.
+   */
+  _buildTextures() {
+    this._disposeMediaTextures();
+    const content = this.content;
+    if (!content) return;
     const makeTexture = (source) => {
-      const texture = content.kind === 'video' ? new THREE.VideoTexture(source) : new THREE.Texture(source);
+      const video = content.kind === 'video';
+      const texture = video ? new THREE.VideoTexture(source) : new THREE.Texture(source);
+      const mipmaps = !video && this.quality.mipmaps;
       texture.colorSpace = THREE.NoColorSpace; // se muestra tal cual, sin conversión
-      texture.minFilter = THREE.LinearFilter;
+      texture.minFilter = mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = false;
+      texture.generateMipmaps = mipmaps;
       texture.needsUpdate = true;
       return texture;
     };
-
     this.texture = makeTexture(content.source);
     // Dos videos (uno por ojo): el segundo tiene su propia textura.
     this.textureR = content.right ? makeTexture(content.right.source) : null;
-    const texture = this.texture;
-    this.content = content;
-    this.layout = layout;
+    this._frameTime = [-1, -1];
     for (const material of this.materials) {
-      material.uniforms.uMap.value = texture;
+      material.uniforms.uMap.value = this.texture;
       material.uniforms.uTexel.value.set(1 / content.width, 1 / content.height);
     }
-    this.requestRender();
+  }
+
+  _disposeMediaTextures() {
+    this.texture?.dispose();
+    this.textureR?.dispose();
+    this.texture = null;
+    this.textureR = null;
+    for (const material of this.materials) material.uniforms.uMap.value = null;
+  }
+
+  /**
+   * Sube el cuadro actual de un video a la GPU solo si cambió (al reproducir o
+   * buscar). En pausa, mover un deslizador redibuja sin volver a subir el cuadro.
+   */
+  _syncVideoFrame(texture, video, slot) {
+    if (!texture || video.readyState < 2) return;
+    if (video.currentTime !== this._frameTime[slot]) {
+      this._frameTime[slot] = video.currentTime;
+      texture.needsUpdate = true;
+    }
   }
 
   /**
@@ -244,16 +315,10 @@ export class StereoView {
     this.requestRender();
   }
 
-  /** Libera la textura y deja el canvas limpio. */
+  /** Libera las texturas (archivo y profundidad) y deja el canvas limpio. */
   clearContent(redraw = true) {
     this.setDepthMap(null);
-    if (this.texture) {
-      this.texture.dispose();
-      this.texture = null;
-    }
-    this.textureR?.dispose();
-    this.textureR = null;
-    for (const material of this.materials) material.uniforms.uMap.value = null;
+    this._disposeMediaTextures();
     this.content = null;
     if (redraw) this.renderNow();
   }
@@ -305,10 +370,11 @@ export class StereoView {
     }
 
     const { source: media, kind, width: srcW, height: srcH } = this.content;
-    // El video necesita volver a subirse a la GPU en cada dibujo para mostrar el cuadro actual.
-    if (kind === 'video' && media.readyState >= 2) this.texture.needsUpdate = true;
     const pair = this.textureR ? this.content.right : null;
-    if (pair && pair.source.readyState >= 2) this.textureR.needsUpdate = true;
+    if (kind === 'video') {
+      this._syncVideoFrame(this.texture, media, 0);
+      if (pair) this._syncVideoFrame(this.textureR, pair.source, 1);
+    }
 
     const p = this.params;
     const isSbs = this.layout === 'sbs';
@@ -317,8 +383,7 @@ export class StereoView {
     // Ancho de UNA vista: SBS completo = media textura; Half-SBS se estira al ancho entero.
     const eyeW = p.source === 'sbs' ? srcW / 2 : srcW;
     const cropOf = (leftHalf) => (twoViews ? [leftHalf ? 0 : 0.5, 0, 0.5, 1] : [0, 0, 1, 1]);
-    const maxSynth = this.depthTexture ? MAX_SYNTH_DEPTH : MAX_SYNTH;
-    const synth = (p.depth / 100) * maxSynth * (p.swap ? -1 : 1);
+    const synth = (p.depth / 100) * MAX_SYNTH * (p.swap ? -1 : 1);
 
     regions.forEach((region, index) => {
       const material = this.materials[index];
@@ -337,10 +402,7 @@ export class StereoView {
         const usesRight = (index === 1) !== p.swap;
         const [fx, fy, fs] = p.frame;
         if (usesRight) {
-          const fw = (srcW / srcH) / (pair.width / pair.height) / p.rightScale;
-          const fh = 1 / p.rightScale;
-          const cx = 0.5 - fw / 2 + p.rightX;
-          const cy = 0.5 - fh / 2 + p.rightY;
+          const [cx, cy, fw, fh] = rightCrop(srcW / srcH, pair.width / pair.height, p.rightScale, p.rightX, p.rightY);
           u.uMap.value = this.textureR;
           u.uTexel.value.set(1 / pair.width, 1 / pair.height);
           u.uCropA.value.set(cx + fx * fw, cy + fy * fh, fs * fw, fs * fh);
@@ -418,7 +480,7 @@ export class StereoView {
     const eyeW = p.source === 'sbs' ? this.content.width / 2 : this.content.width;
     let width = this.layout === 'sbs' ? eyeW * 2 : eyeW;
     let height = this.content.height;
-    const limit = Math.min(EXPORT_MAX_PX, this.renderer.capabilities.maxTextureSize);
+    const limit = Math.min(this.quality.exportMaxPx, this.renderer.capabilities.maxTextureSize);
     const shrink = Math.min(1, limit / width, limit / height);
     width = Math.max(2, Math.round(width * shrink / 2) * 2);
     height = Math.max(1, Math.round(height * shrink));
@@ -428,9 +490,15 @@ export class StereoView {
     try {
       this.renderer.setClearColor(0x000000, 1);
       this._draw({ target, width, height, gap: false, lens: { x: 0, y: 0 } });
-      this.renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+      this.renderer.setClearColor(CLEAR_COLOR, 1);
+      // La lectura asíncrona no detiene la página mientras la GPU termina (WebGL 2).
+      if (this.renderer.readRenderTargetPixelsAsync) {
+        await this.renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height, pixels);
+      } else {
+        this.renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+      }
     } finally {
-      this.renderer.setClearColor(0x050505, 1);
+      this.renderer.setClearColor(CLEAR_COLOR, 1);
       target.dispose();
       this.requestRender();
     }
@@ -462,6 +530,7 @@ export class StereoView {
 
   dispose() {
     cancelAnimationFrame(this._raf);
+    this._listeners.abort();
     this.clearContent(false);
     this.geometry.dispose();
     this.materials.forEach((material) => material.dispose());

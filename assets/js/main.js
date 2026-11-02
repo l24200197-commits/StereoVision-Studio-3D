@@ -5,8 +5,10 @@
  *   store → estado · ui → pantalla · calibration → controles · studio → reglas
  *   stereoView → Three.js/WebGL · vrMode → visor VR · intro → portada
  *   stereoDetect → qué trae la foto · depthEstimate → profundidad con IA
- *   gestures → zoom y encuadre · vrWizard → gafas
+ *   gestures → zoom, encuadre y teclado · vrWizard → gafas
  *   audioSync + alignPair → unir dos videos (sincronía y tamaño)
+ *   tasks + workers/ → cálculos pesados fuera del hilo principal
+ *   settings + core/deviceProfile → calidad según el equipo
  *
  * Todo corre en el navegador: no hay servidor, registro ni envío de archivos.
  */
@@ -18,6 +20,7 @@ import { createStudio, MODULES } from './modules/studio.js';
 import { createVrMode } from './modules/vrMode.js';
 import { createIntro } from './modules/intro.js';
 import { attachGestures } from './modules/gestures.js';
+import { createSettings } from './modules/settings.js';
 
 function boot() {
   const ui = createUi();
@@ -47,6 +50,18 @@ function boot() {
     });
   }
 
+  // Calidad según el equipo (o la elegida en Ajustes); también sin WebGL, para los efectos de la interfaz.
+  const settings = createSettings({ view });
+
+  const toggleStageFullscreen = async () => {
+    try {
+      if (document.fullscreenElement === ui.els.stage) await document.exitFullscreen();
+      else if (!document.fullscreenElement) await ui.els.stage.requestFullscreen();
+    } catch {
+      store.set({ message: { kind: 'error', text: 'Este navegador no permitió poner el visor a pantalla completa.' } });
+    }
+  };
+
   ui.bind({
     onModule: (id) => studio?.selectModule(id),
     onFile: (file) => studio?.importFile(file),
@@ -57,10 +72,15 @@ function boot() {
     onVrPlay: () => studio?.togglePlayback(),
     onDownload: () => studio?.downloadResult(),
     onAddRight: (file) => studio?.addRightVideo(file),
+    onCancelTask: () => studio?.cancelTask(),
+    onDismissMessage: () => store.set({ message: null }),
+    onZoom: (factor) => studio?.zoomBy(factor),
+    onFit: () => studio?.recenter(),
+    onStageFullscreen: toggleStageFullscreen,
   });
 
   if (view) {
-    studio = createStudio({ store, view, ui, calibration });
+    studio = createStudio({ store, view, ui, calibration, getProfile: () => settings.profile });
     vr = createVrMode({
       store,
       stage: ui.els.stage,
@@ -69,6 +89,7 @@ function boot() {
       calibrateButton: ui.els.vrCalibrate,
       wizardRoot: ui.els.vrWizard,
       hintElement: ui.els.vrHint,
+      returnFocus: ui.els.btnVr,
       // El paso «Tamaño» del asistente ajusta el zoom del archivo, viendo la imagen real.
       scale: {
         get: () => store.get().params.scale ?? 100,
@@ -76,7 +97,7 @@ function boot() {
         range: () => controlOf(store.get().module, 'scale') ?? { min: 50, max: 200 },
       },
     });
-    attachGestures(ui.els.stage, { store, studio });
+    attachGestures(ui.els.stage, { store, studio, onFullscreen: toggleStageFullscreen });
 
     // El canvas sigue el tamaño real del área de vista (Studio y VR).
     const fit = () => {
@@ -85,6 +106,15 @@ function boot() {
     };
     new ResizeObserver(fit).observe(ui.els.stage);
     fit();
+
+    // Al pasar la ventana a otro monitor cambia la densidad de píxeles: se vuelve a aplicar el tope.
+    const watchDensity = () => {
+      matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`).addEventListener('change', () => {
+        view.setQuality(settings.profile);
+        watchDensity();
+      }, { once: true });
+    };
+    watchDensity();
 
     view.onContextLost = () => store.set({
       message: { kind: 'error', text: 'El navegador interrumpió momentáneamente la gráfica. Espera un instante: la vista se restaura sola.' },
@@ -106,7 +136,7 @@ function boot() {
 
   // Herramientas de inspección para pruebas: se activan con ?debug en la URL.
   if (new URLSearchParams(location.search).has('debug')) {
-    window.__studio = { store, studio, view, vr };
+    window.__studio = { store, studio, view, vr, settings };
   }
 }
 

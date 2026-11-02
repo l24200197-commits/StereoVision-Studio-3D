@@ -7,7 +7,10 @@
  * el archivo original (RN-07). La descarga genera un archivo nuevo aparte.
  *
  * Un control puede declarar `when(params)`: solo se muestra cuando aplica
- * (por ejemplo, «Profundidad simulada» solo existe para una foto normal).
+ * (por ejemplo, «Profundidad» solo existe para una foto normal).
+ *
+ * Cada control trae su ayuda desplegable («?») y, cuando su valor difiere del
+ * inicial, un botón para restablecer solo ese ajuste.
  */
 
 const SHIFT = {
@@ -94,8 +97,8 @@ const VIDEO_CONTROLS = [
     key: 'sync',
     type: 'range',
     label: 'Sincronía',
-    min: -10,
-    max: 10,
+    min: -30,
+    max: 30,
     step: 0.02,
     def: 0,
     unit: 's',
@@ -217,7 +220,40 @@ function formatValue(control, value) {
  * @param handlers { onChange(key, value) }
  */
 export function createCalibrationPanel(root, { onChange }) {
-  const refs = new Map(); // key → { control, row, input(s), output }
+  const refs = new Map(); // key → { control, row, input(s), output, reset }
+
+  /** Cabecera común: nombre, lectura, restablecer este ajuste y ayuda. */
+  function head(control, id, hintId, labelTag) {
+    const name = labelTag === 'label'
+      ? `<label for="${id}">${control.label}</label>`
+      : `<span class="ctl-label" id="${id}-label">${control.label}</span>`;
+    const output = control.type === 'range' || control.type === 'toggle' ? `<output for="${id}" class="ctl-value"></output>` : '';
+    const reset = control.type === 'action' ? '' : `
+      <button type="button" class="ctl-tool ctl-reset" hidden aria-label="Restablecer ${control.label}" title="Restablecer este ajuste">
+        <svg class="ico" aria-hidden="true"><use href="#i-reset"/></svg>
+      </button>`;
+    return `
+      <div class="ctl-head">
+        ${name}
+        <span class="ctl-tools">
+          ${output}${reset}
+          <button type="button" class="ctl-tool ctl-info" aria-expanded="false" aria-controls="${hintId}" aria-label="Ayuda sobre ${control.label}" title="Ayuda">?</button>
+        </span>
+      </div>`;
+  }
+
+  function wireCommon(row, control) {
+    const info = row.querySelector('.ctl-info');
+    const hint = row.querySelector('.ctl-hint');
+    info.addEventListener('click', () => {
+      const open = info.getAttribute('aria-expanded') !== 'true';
+      info.setAttribute('aria-expanded', String(open));
+      hint.hidden = !open;
+    });
+    const reset = row.querySelector('.ctl-reset');
+    reset?.addEventListener('click', () => onChange(control.key, control.def));
+    return reset;
+  }
 
   function build(moduleId, params) {
     root.replaceChildren();
@@ -226,64 +262,59 @@ export function createCalibrationPanel(root, { onChange }) {
     for (const control of CALIBRATION[moduleId] ?? []) {
       const row = document.createElement('div');
       row.className = 'ctl';
+      row.dataset.key = control.key;
       const id = `cal-${control.key}`;
       const hintId = `${id}-hint`;
+      // La ayuda queda oculta hasta pulsar «?», pero los lectores de pantalla la leen siempre (aria-describedby).
+      const hint = `<p id="${hintId}" class="ctl-hint" hidden>${control.hint}</p>`;
 
       if (control.type === 'range') {
-        row.innerHTML = `
-          <div class="ctl-head">
-            <label for="${id}">${control.label}</label>
-            <output for="${id}" class="ctl-value"></output>
-          </div>
+        row.innerHTML = `${head(control, id, hintId, 'label')}
           <input id="${id}" type="range" min="${control.min}" max="${control.max}"
                  step="${control.step}" aria-describedby="${hintId}">
-          <p id="${hintId}" class="ctl-hint">${control.hint}</p>`;
-        const input = row.querySelector('input');
+          ${hint}`;
+        const input = row.querySelector('input[type="range"]');
         const output = row.querySelector('output');
         input.addEventListener('input', () => onChange(control.key, Number(input.value)));
-        refs.set(control.key, { control, row, input, output });
+        refs.set(control.key, { control, row, input, output, reset: wireCommon(row, control) });
       } else if (control.type === 'action') {
-        row.innerHTML = `
+        row.innerHTML = `${head(control, id, hintId, 'span')}
           <button type="button" class="btn btn-action" id="${id}" aria-describedby="${hintId}">${control.text}</button>
-          <p id="${hintId}" class="ctl-hint">${control.hint}</p>`;
-        const input = row.querySelector('button');
+          ${hint}`;
+        const input = row.querySelector('.btn-action');
         input.addEventListener('click', () => onChange(control.key, true));
+        wireCommon(row, control);
         refs.set(control.key, { control, row, input });
       } else if (control.type === 'choice') {
-        const labelId = `${id}-label`;
-        row.innerHTML = `
-          <div class="ctl-head">
-            <span class="ctl-label" id="${labelId}">${control.label}</span>
-          </div>
-          <div class="seg" role="radiogroup" aria-labelledby="${labelId}" aria-describedby="${hintId}">
+        row.innerHTML = `${head(control, id, hintId, 'span')}
+          <div class="seg" role="radiogroup" aria-labelledby="${id}-label" aria-describedby="${hintId}">
             ${control.options.map(([value, text]) => `
               <label class="seg-opt">
                 <input type="radio" name="${id}" value="${value}">
                 <span>${text}</span>
               </label>`).join('')}
           </div>
-          <p id="${hintId}" class="ctl-hint">${control.hint}</p>`;
-        const inputs = [...row.querySelectorAll('input')];
+          ${hint}`;
+        const inputs = [...row.querySelectorAll('input[type="radio"]')];
         for (const input of inputs) {
           input.addEventListener('change', () => input.checked && onChange(control.key, input.value));
         }
+        // El tipo de foto lo decide la detección; no se ofrece «restablecer» a un valor genérico.
+        row.querySelector('.ctl-reset')?.remove();
+        wireCommon(row, control);
         refs.set(control.key, { control, row, inputs });
       } else {
-        row.innerHTML = `
-          <div class="ctl-head">
-            <label for="${id}">${control.label}</label>
-            <output for="${id}" class="ctl-value"></output>
-          </div>
+        row.innerHTML = `${head(control, id, hintId, 'label')}
           <label class="switch">
             <input id="${id}" type="checkbox" role="switch" aria-describedby="${hintId}">
             <span class="switch-track" aria-hidden="true"></span>
             <span class="switch-text">Activar</span>
           </label>
-          <p id="${hintId}" class="ctl-hint">${control.hint}</p>`;
-        const input = row.querySelector('input');
+          ${hint}`;
+        const input = row.querySelector('input[type="checkbox"]');
         const output = row.querySelector('output');
         input.addEventListener('change', () => onChange(control.key, input.checked));
-        refs.set(control.key, { control, row, input, output });
+        refs.set(control.key, { control, row, input, output, reset: wireCommon(row, control) });
       }
       root.append(row);
     }
@@ -292,13 +323,16 @@ export function createCalibrationPanel(root, { onChange }) {
 
   /** Refleja los parámetros vigentes en cada control, su indicador y su visibilidad. */
   function sync(params) {
-    for (const { control, row, input, inputs, output } of refs.values()) {
+    for (const { control, row, input, inputs, output, reset } of refs.values()) {
       row.hidden = Boolean(control.when && !control.when(params));
       const value = params[control.key];
       if (control.type === 'action') continue;
+      if (reset) reset.hidden = value === undefined || value === control.def;
+      row.dataset.changed = String(value !== undefined && value !== control.def && control.type !== 'choice');
       if (control.type === 'range') {
         if (Number(input.value) !== value) input.value = String(value);
         output.textContent = formatValue(control, value);
+        input.setAttribute('aria-valuetext', formatValue(control, value));
       } else if (control.type === 'choice') {
         for (const option of inputs) option.checked = option.value === value;
       } else {
@@ -309,8 +343,9 @@ export function createCalibrationPanel(root, { onChange }) {
   }
 
   function setEnabled(enabled) {
-    for (const { input, inputs } of refs.values()) {
+    for (const { input, inputs, reset } of refs.values()) {
       for (const el of inputs ?? [input]) el.disabled = !enabled;
+      if (reset) reset.disabled = !enabled;
     }
     root.classList.toggle('is-disabled', !enabled);
   }

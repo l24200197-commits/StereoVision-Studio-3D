@@ -1,0 +1,22 @@
+{
+  "name": "stereovision-studio-3d",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Studio web para importar, calibrar y visualizar contenido estereoscópico (anaglifo, SBS, VR). Sitio estático para GitHub Pages; estas dependencias son solo para pruebas.",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "npm run check && npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test \"tests/unit/**/*.test.js\"",
+    "test:e2e": "playwright test --grep-invert @serie && playwright test --grep @serie --workers=1",
+    "check": "node scripts/check.mjs",
+    "csp-hash": "node scripts/csp-hash.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

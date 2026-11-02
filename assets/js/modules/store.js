@@ -30,7 +30,8 @@ export const STATUS_LABEL = Object.freeze({
  *
  * file    → datos del archivo activo (nombre, formato, tamaño, resolución…) o null
  * params  → parámetros de calibración vigentes del módulo activo
- * message → { kind: 'info' | 'ok' | 'error', text } o null
+ * message → { kind: 'info' | 'ok' | 'error', text, action?: { label, run() } } o null
+ * task    → trabajo largo en curso { kind, label, progress: 0…1 | null } o null
  * vr      → true mientras el modo VR está activo
  */
 export function createInitialState() {
@@ -40,6 +41,7 @@ export function createInitialState() {
     file: null,
     params: {},
     message: null,
+    task: null,
     vr: false,
     fatal: false,
     pending: null, // nombre del archivo que se está preparando mientras status = cargando

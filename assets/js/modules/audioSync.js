@@ -1,91 +1,112 @@
 /**
  * audioSync.js — Encuentra el desfase entre dos videos grabados a la vez.
  *
- * Dos teléfonos que graban la misma escena escuchan los mismos sonidos (voces,
- * pasos, un aplauso) aunque hayan empezado a grabar en momentos distintos. Se
- * compara la «huella» de golpes de sonido de cada audio y se busca el desfase
- * en el que mejor coinciden. Todo se decodifica en el dispositivo.
+ * Reparto del trabajo:
+ *   · hilo principal: leer el archivo y decodificar su audio (la API de audio
+ *     del navegador solo existe aquí; decodifica de forma asíncrona y nativa),
+ *     y mezclarlo a mono a 16 kHz para gastar poca memoria;
+ *   · Worker: huella de golpes y correlación cruzada por FFT
+ *     (core/audioCorrelation.js).
+ * Los dos audios se decodifican uno tras otro (no a la vez) para no duplicar el
+ * pico de memoria, y la huella de cada archivo se guarda: «Unir de nuevo» no
+ * vuelve a decodificar. Todo ocurre en el dispositivo.
  *
  * Devuelve offset en segundos con el sentido que usa el Studio:
  *   tiempoDerecho = tiempoIzquierdo + offset
  */
-const RATE = 100; // huellas por segundo (resolución de 10 ms, menos que un cuadro)
-const MAX_SECONDS = 120; // solo se analizan los primeros 2 min de cada audio
-const MAX_LAG_SECONDS = 20; // desfase máximo que se busca
+import { runTask, throwIfAborted } from './tasks.js';
 
-async function decode(file) {
-  const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!Ctx) throw new Error('Este navegador no decodifica audio.');
-  const ctx = new Ctx(1, 44100, 44100);
-  const data = await file.arrayBuffer();
+const DECODE_RATE = 16000; // suficiente para golpes de 10 ms; ¼ de memoria que 44.1 kHz
+const MAX_SECONDS = 300; // se analizan como mucho los primeros 5 min de cada audio
+const DEFAULT_MAX_BYTES = 1024 * 1024 * 1024;
+
+export class SyncError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.name = 'SyncError';
+    this.code = code;
+  }
+}
+
+const envelopes = new WeakMap(); // File → Promise<Float32Array>
+
+function offlineContext() {
+  const Ctx = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+  if (!Ctx) throw new SyncError('Este navegador no decodifica audio.', 'unsupported');
+  try {
+    return new Ctx(1, DECODE_RATE, DECODE_RATE);
+  } catch {
+    return new Ctx(1, 44100, 44100); // Safari antiguos solo aceptan frecuencias «de audio»
+  }
+}
+
+function decodeAudio(ctx, data) {
   return new Promise((resolve, reject) => {
     // Forma con callbacks: también funciona en Safari antiguos.
-    ctx.decodeAudioData(data, resolve, () => reject(new Error('Sin pista de audio legible.')));
+    const fail = () => reject(new SyncError('El video no trae una pista de audio legible.', 'no-audio'));
+    try {
+      const promise = ctx.decodeAudioData(data, resolve, fail);
+      promise?.catch?.(fail);
+    } catch {
+      fail();
+    }
   });
 }
 
-/** Huella de golpes: subidas de energía cada 10 ms, normalizadas. */
-function onsetEnvelope(buffer) {
-  const bin = Math.max(1, Math.round(buffer.sampleRate / RATE));
-  const length = Math.min(buffer.length, buffer.sampleRate * MAX_SECONDS);
-  const bins = Math.floor(length / bin);
-  const channels = [];
-  for (let c = 0; c < buffer.numberOfChannels; c += 1) channels.push(buffer.getChannelData(c));
-
-  const energy = new Float32Array(bins);
-  for (let i = 0; i < bins; i += 1) {
-    let sum = 0;
-    for (let j = i * bin, end = j + bin; j < end; j += 1) {
-      let v = 0;
-      for (const ch of channels) v += ch[j];
-      sum += v * v;
-    }
-    energy[i] = Math.log(1e-6 + sum / bin);
+async function decodeMono(file, maxBytes) {
+  if (file.size > maxBytes) {
+    throw new SyncError(
+      `«${file.name}» es demasiado grande para analizar su audio en este dispositivo (${Math.round(file.size / 1048576)} MB).`,
+      'too-large',
+    );
   }
-  const onset = new Float32Array(bins);
-  let mean = 0;
-  for (let i = 1; i < bins; i += 1) {
-    onset[i] = Math.max(0, energy[i] - energy[i - 1]);
-    mean += onset[i];
+  const data = await file.arrayBuffer();
+  const buffer = await decodeAudio(offlineContext(), data);
+  const length = Math.min(buffer.length, Math.round(buffer.sampleRate * MAX_SECONDS));
+  const samples = new Float32Array(length);
+  const channels = buffer.numberOfChannels;
+  for (let c = 0; c < channels; c += 1) {
+    const channel = buffer.getChannelData(c);
+    for (let i = 0; i < length; i += 1) samples[i] += channel[i] / channels;
   }
-  mean /= bins || 1;
-  let sq = 0;
-  for (let i = 0; i < bins; i += 1) {
-    onset[i] -= mean;
-    sq += onset[i] * onset[i];
-  }
-  const norm = Math.sqrt(sq) || 1;
-  for (let i = 0; i < bins; i += 1) onset[i] /= norm;
-  return onset;
+  return { samples, sampleRate: buffer.sampleRate };
 }
 
 /**
- * @returns {{ offset: number, confident: boolean }} o lanza si algún video no trae audio.
+ * Huella de un archivo; se calcula una vez y se reutiliza. No depende de la
+ * cancelación: la decodificación del navegador no se puede interrumpir, así que
+ * si el usuario cancela se termina en segundo plano y queda lista para un
+ * reintento (quien llama comprueba su señal al recibirla).
  */
-export async function estimateAudioOffset(fileLeft, fileRight) {
-  const [a, b] = await Promise.all([decode(fileLeft), decode(fileRight)]);
-  const left = onsetEnvelope(a);
-  const right = onsetEnvelope(b);
-
-  const maxLag = Math.min(MAX_LAG_SECONDS * RATE, Math.max(left.length, right.length) - 1);
-  const scores = new Float32Array(2 * maxLag + 1);
-  // Correlación cruzada: un suceso en izquierda[i] aparece en derecha[i + lag].
-  for (let lag = -maxLag; lag <= maxLag; lag += 1) {
-    let sum = 0;
-    const from = Math.max(0, -lag);
-    const to = Math.min(left.length, right.length - lag);
-    for (let i = from; i < to; i += 1) sum += left[i] * right[i + lag];
-    scores[lag + maxLag] = sum;
+function envelopeOf(file, maxBytes) {
+  let pending = envelopes.get(file);
+  if (!pending) {
+    pending = (async () => {
+      const { samples, sampleRate } = await decodeMono(file, maxBytes);
+      return runTask('envelope', { samples, sampleRate }, { transfer: [samples.buffer] });
+    })();
+    envelopes.set(file, pending);
+    pending.catch(() => envelopes.delete(file)); // un fallo permite reintentar
   }
+  return pending;
+}
 
-  let best = 0;
-  for (let i = 1; i < scores.length; i += 1) if (scores[i] > scores[best]) best = i;
-  // Confianza: el pico debe destacar sobre el segundo mejor lejos de él (±0.3 s).
-  let second = -Infinity;
-  for (let i = 0; i < scores.length; i += 1) {
-    if (Math.abs(i - best) > 0.3 * RATE && scores[i] > second) second = scores[i];
-  }
-  const peak = scores[best];
-  const confident = peak > 0.05 && peak > second * 1.25;
-  return { offset: (best - maxLag) / RATE, confident };
+/**
+ * @param options { signal, onProgress(fraction, etapa), maxBytes }
+ * @returns {{ offset: number, confident: boolean, peak: number, ratio: number }}
+ *          o lanza SyncError si algún video no trae audio
+ */
+export async function estimateAudioOffset(fileLeft, fileRight, { signal, onProgress, maxBytes = DEFAULT_MAX_BYTES } = {}) {
+  throwIfAborted(signal);
+  onProgress?.(0, 'audio izquierdo');
+  const left = await envelopeOf(fileLeft, maxBytes);
+  throwIfAborted(signal);
+  onProgress?.(0.45, 'audio derecho');
+  const right = await envelopeOf(fileRight, maxBytes);
+  throwIfAborted(signal);
+  onProgress?.(0.9, 'comparando');
+  // Se envían copias: las huellas originales quedan guardadas para reintentos.
+  const result = await runTask('offset', { left: left.slice(), right: right.slice() }, { signal });
+  onProgress?.(1, 'listo');
+  return result;
 }

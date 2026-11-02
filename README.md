@@ -35,7 +35,7 @@ Calibrar **no inventa profundidad ni modifica el archivo**. Son tres cosas disti
 
 **Sí hace:** importar JPG/JPEG/PNG/WebP y MP4 locales; validar y mostrar errores claros; reconocer si una foto es anaglifo, par SBS o foto normal; **crear un anaglifo** desde un par SBS (3D real) o desde una foto normal (profundidad estimada con IA en el dispositivo); **crear un par SBS para gafas** desde una foto normal; en Video, **generar el otro ojo** de un video normal o **unir dos videos** (uno por ojo, de teléfonos distintos) sincronizándolos por audio e igualando tamaño y encuadre; aceptar Half-SBS; anaglifo con zoom, brillo y contraste; SBS con desplazamiento horizontal, alineación vertical, escala e intercambio de ojos; reproducción de video SBS con controles; modo VR táctil con asistente para calibrar los lentes de las gafas; zoom y encuadre con rueda, arrastre o pellizco; descargar el anaglifo o el SBS resultante en JPG; liberar recursos al cambiar de archivo.
 
-**No hace (fuera de alcance):** garantizar la profundidad exacta de una foto 2D (se estima con IA; en video y sin conexión se usa un relieve aproximado: abajo y al centro cerca, arriba lejos), convertir un anaglifo en SBS, exportar video, transcodificar video, seguimiento de cabeza/giroscopio, SBS vertical (arriba/abajo) u «over-under», cuentas de usuario o almacenamiento en servidor.
+**No hace (fuera de alcance):** recuperar la profundidad real de una foto 2D. Con una sola foto, la IA solo *estima* qué está cerca y qué lejos; el resultado es convincente en escenas comunes pero puede equivocarse en reflejos, cristales, cielos o figuras planas, y nunca equivale a un par estéreo capturado con dos cámaras (en video y sin conexión se usa un relieve aproximado: abajo y al centro cerca, arriba lejos). Tampoco hace: convertir un anaglifo en SBS, exportar video, transcodificar video, seguimiento de cabeza/giroscopio, SBS vertical (arriba/abajo) u «over-under», cuentas de usuario o almacenamiento en servidor.
 
 ---
 
@@ -50,6 +50,14 @@ Calibrar **no inventa profundidad ni modifica el archivo**. Son tres cosas disti
 3. **Calibra** en el panel derecho; los cambios se ven al instante. Sobre el visor: rueda o pellizco = zoom, arrastrar = mover, doble clic/toque = centrar. **Restablecer** devuelve todo a los valores iniciales. **Descargar** genera un JPG nuevo (anaglifo o SBS) con la calibración aplicada; el original no cambia.
 4. En SBS pulsa **«Entrar al modo VR»** y coloca el teléfono en horizontal dentro de las gafas. La primera vez aparece el **asistente de las gafas**: cada ojo ve una línea dentro de un círculo; toca el tercio izquierdo para restar, el derecho para sumar (mantén pulsado para avanzar rápido) y el centro para pasar de **Separación** a **Altura** y a **Tamaño** (este último se hace viendo tu foto o video). Está bien cuando ves una sola cruz «+». Se guarda en el teléfono; para repetirlo **mantén pulsada la pantalla** o usa **«Calibrar gafas»**. En iPhone, Safari no permite pantalla completa: usa Compartir → «Agregar a inicio» y abre el Studio desde ese icono. Sal con **«Salir de VR»** o `Esc`.
 
+5. **Herramientas transversales**
+   - **Barra del visor** (abajo, sobre la imagen): reproducir/pausar (video), alejar, nivel de zoom, acercar, centrar y visor a pantalla completa.
+   - **Atajos de teclado** (botón del teclado arriba a la derecha): con el visor enfocado, `+`/`−` zoom, flechas para mover (`Mayús` = más rápido), `0` centrar, `F` pantalla completa, `Espacio`/`K` reproducir, `J`/`L` ∓10 s, `M` silencio.
+   - **Ayuda contextual**: cada ajuste tiene un botón `?` que despliega su explicación, y un botón ↺ que aparece solo cuando ese ajuste cambió, para devolverlo a su valor inicial.
+   - **Restablecer** todo se puede **deshacer** desde el aviso que aparece debajo del visor.
+   - **Trabajos largos** (unir dos videos, estimar profundidad) muestran su avance real en una barra con **Cancelar**; si se cancela o falla, el aviso ofrece **Reintentar**.
+   - **Ajustes** (engrane): calidad del visor (Automática / Alta / Ahorro), olvidar la calibración guardada de las gafas (pide confirmación) y resumen de privacidad.
+
 Rangos de calibración:
 
 | Módulo | Control | Rango | Inicial |
@@ -59,7 +67,7 @@ Rangos de calibración:
 | Anaglifo creado | Desplazamiento / Alineación (par SBS) / Intercambiar ojos | −10…10 % | 0 |
 | SBS imagen y video | Tipo de foto | SBS completo / Half-SBS / Foto normal | según detección (video: SBS) |
 | Foto normal (anaglifo o SBS) | Profundidad | 0–100 % | 50 % |
-| Dos videos | Sincronía / Tamaño del video derecho | −10…10 s (paso 0.02) / 60–160 % | automáticos (audio e imagen) |
+| Dos videos | Sincronía / Tamaño del video derecho | −30…30 s (paso 0.02) / 60–160 % | automáticos (audio e imagen) |
 | Modo VR (gafas) | Separación / Altura de lentes | −25…25 % / −10…10 % | guardado en el teléfono |
 | SBS imagen y video | Desplazamiento horizontal / Alineación vertical | −10…10 % (paso 0.1) | 0 |
 | SBS imagen y video | Zoom | 50–200 % | 100 % |
@@ -74,79 +82,134 @@ Generadas a partir de una fotografía estereoscópica propia (par izquierdo/dere
 
 ## 3. Ejecutar localmente (siempre por HTTP, no `file://`)
 
-Los módulos ES y `fetch` requieren un origen HTTP.
+Los módulos ES, los Workers y `fetch` requieren un origen HTTP. La aplicación **no necesita compilación ni dependencias**: basta servir la carpeta.
 
-- **VS Code:** extensión *Live Server* → clic derecho en `index.html` → *Open with Live Server*.
+- **Con Node (recomendado, imita GitHub Pages):** `npm start` → `http://localhost:8000/StereoVision-Studio-3D/`. Sirve el sitio bajo el mismo subdirectorio que Pages, con tipos MIME correctos y peticiones por rangos (`scripts/serve.mjs`, sin dependencias).
 - **Python:** `python3 -m http.server 8000` dentro de esta carpeta y abrir `http://localhost:8000/`.
+- **VS Code:** extensión *Live Server* → *Open with Live Server*.
 
-Para probar desde el teléfono en la misma red Wi-Fi, abre `http://IP-DE-TU-PC:PUERTO/`. Algunas funciones móviles (pantalla completa, Wake Lock) exigen HTTPS, por lo que la prueba final se hace en la URL de GitHub Pages.
+Para probar desde el teléfono en la misma red Wi-Fi, abre `http://IP-DE-TU-PC:PUERTO/`. Pantalla completa, bloqueo de orientación y Wake Lock exigen HTTPS: la prueba final en teléfono se hace en la URL de GitHub Pages.
 
-Modo de inspección opcional: añade `?debug` a la URL para exponer `window.__studio` (estado, visor, memoria de GPU) en la consola.
+Opciones de URL: `?debug` expone `window.__studio` (estado, visor, memoria de GPU, perfil); `?quality=saver` o `?quality=high` fuerzan un perfil de calidad.
+
+### Pruebas
+
+```bash
+npm install          # solo instala herramientas de prueba (Playwright y axe-core); el sitio no las usa
+npx playwright install chromium   # opcional: solo si no tienes Google Chrome instalado
+npm test             # comprobaciones estáticas + unitarias + navegador
+npm run test:unit    # solo unitarias (Node, sin navegador, < 1 s)
+npm run test:e2e     # solo navegador
+```
+
+Las pruebas de navegador usan **Google Chrome** instalado porque decodifica H.264 como los navegadores reales. Con `PW_CHANNEL=chromium` usan el Chromium de Playwright (sin H.264: las pruebas de video se omiten solas). Con `OFFLINE=1` se omiten las de profundidad con IA (necesitan descargar el modelo).
 
 ## 4. Publicar en GitHub Pages
 
 ```bash
-cd StereoVision-Studio-3D            # la carpeta que contiene index.html
-git init                              # solo si aún no es repositorio (¡evita carpetas .git anidadas!)
 git add .
 git commit -m "StereoVision Studio 3D"
-git branch -M main
-git remote add origin https://github.com/l24200197-commits/StereoVision-Studio-3D.git
-git push -u origin main
+git push origin main
 ```
 
-Después: **Settings → Pages → Build and deployment → Source: Deploy from a branch → Branch `main` / carpeta `/ (root)`**. El sitio queda en `https://l24200197-commits.github.io/StereoVision-Studio-3D/`.
-`index.html` debe estar en la **raíz del repositorio**. Todas las rutas del proyecto son **relativas** (`./assets/...`), por lo que funcionan bajo el subdirectorio de Pages (RN-20). La única dependencia externa es Three.js por CDN (versión fija 0.180.0).
+Primera vez: **Settings → Pages → Build and deployment → Source: Deploy from a branch → Branch `main` / carpeta `/ (root)`**. El sitio queda en `https://l24200197-commits.github.io/StereoVision-Studio-3D/`.
 
----
+- `index.html` debe estar en la **raíz**; todas las rutas son **relativas** (`./assets/...`), así que funcionan bajo el subdirectorio de Pages (RN-20). `npm run check` lo verifica.
+- `package.json`, `scripts/` y `tests/` se publican pero el sitio no los usa; `node_modules/` está en `.gitignore`.
+- Si actualizas Three.js o editas el `importmap` de `index.html`, ejecuta `npm run csp-hash` (recalcula el hash de la política de seguridad) y actualiza los hashes `integrity` del importmap.
 
 ## 5. Arquitectura
 
 ```
 StereoVision-Studio-3D/
-├── index.html                 Estructura de la interfaz (sin lógica)
-├── README.md
-├── assets/
-│   ├── css/styles.css         Estilos, diseño responsivo, modo VR y movimiento
-│   ├── img/favicon.svg        Icono
-│   ├── media/                 Muestras ligeras (anaglifo, SBS imagen, SBS video)
-│   └── js/
-│       ├── main.js            Inicialización: crea y conecta las piezas
-│       └── modules/
-│           ├── store.js       Estado único y catálogo de estados
-│           ├── ui.js          Lee el estado y actualiza la pantalla; eventos del DOM
-│           ├── studio.js      Reglas de sesión: módulo, importación, sustitución, reinicio
-│           ├── fileImport.js  Selección, validación (RN-02/03/04) y decodificación
-│           ├── calibration.js Parámetros, valores iniciales y panel de controles
-│           ├── stereoView.js  Visor Three.js: recorte por ojo, aspecto, desplazamiento
-│           ├── anaglyph.js    Módulo anaglifo (una región, brillo/contraste)
-│           ├── sbsImage.js    Módulo imagen SBS (dos regiones, calibración)
-│           ├── sbsVideo.js    Módulo video SBS (un <video>, controles de reproducción)
-│           ├── vrMode.js      Modo VR: pantalla completa, orientación, controles táctiles
-│           └── motion.js      Utilidades de animación (respetan «reducir movimiento»)
+├── index.html                 Estructura de la interfaz, CSP e importmap (sin lógica)
+├── manifest.webmanifest       Abrir a pantalla completa desde la pantalla de inicio
+├── package.json               Solo scripts y dependencias de PRUEBA (el sitio no las usa)
+├── scripts/                   serve.mjs (servidor local tipo Pages), check.mjs, csp-hash.mjs
+├── tests/unit/                Pruebas de Node (lógica pura)
+├── tests/e2e/                 Pruebas de navegador (Playwright + axe-core)
+└── assets/
+    ├── css/styles.css         Estilos, diseño responsivo, modo VR, movimiento, perfil «Ahorro»
+    ├── img/ · media/          Icono y muestras ligeras
+    └── js/
+        ├── main.js            Arranque: crea y conecta las piezas
+        ├── core/              Lógica PURA, sin DOM (se prueba en Node y corre en Workers)
+        │   ├── fft.js               FFT radix-2 y correlación cruzada
+        │   ├── audioCorrelation.js  Huella de golpes de sonido y desfase con confianza
+        │   ├── alignSearch.js       Búsqueda gruesa→fina de escala/desplazamiento con confianza
+        │   ├── pairGeometry.js      Recorte del video derecho y cuadro común (una sola fórmula)
+        │   ├── depthPost.js         Suavizado del mapa de profundidad y plano de pantalla
+        │   ├── fileSignature.js     Firma binaria y dimensiones de cabecera (JPEG/PNG/WebP)
+        │   └── deviceProfile.js     Perfil de calidad según el equipo
+        ├── workers/           Cálculo fuera del hilo principal
+        │   ├── analysis.worker.js   Sincronía y alineación (un Worker por tarea: cancelar = terminar)
+        │   ├── handlers.js          Tareas compartidas por el Worker y la alternativa en el hilo principal
+        │   ├── depth.worker.js      IA de profundidad (Worker persistente: el modelo se carga una vez)
+        │   └── depthPipeline.js     Depth Anything V2 con transformers.js
+        └── modules/           Piezas con DOM / WebGL
+            store · ui · studio · fileImport · calibration · stereoView · anaglyph · sbsImage · sbsVideo
+            vrMode · vrWizard · intro · gestures · motion · stereoDetect · audioSync · alignPair
+            depthEstimate · tasks (Workers con progreso y cancelación) · settings (Ajustes y Atajos)
 ```
+
+Principios: la lógica de cálculo vive en `core/` (sin DOM, probada en Node); lo pesado corre en `workers/`; `stereoView.js` es la única pieza que habla con WebGL; `studio.js` es la única que decide reglas de sesión; `ui.js` solo pinta el estado.
 
 ### Responsabilidad de cada módulo
 
 | Módulo | Responsabilidad |
 |---|---|
-| `main.js` | Solo arranca: crea store, UI, visor, calibración, studio y VR, y los conecta. Atiende la falta de WebGL. |
-| `store.js` | Guarda el estado (módulo, estado, archivo, parámetros, mensaje, VR) y avisa a quien se suscribe. No toca DOM ni WebGL. |
-| `ui.js` | Pinta el estado (píldora de estado, información del archivo, mensajes, habilitación de controles, rótulos por ojo). Sin reglas de negocio. |
-| `studio.js` | Reglas RN-01/04/05/08/09/10: un solo archivo activo, liberar el anterior, restablecer calibración al importar, token para ignorar importaciones atrasadas. |
-| `fileImport.js` | Valida formato/tamaño/compatibilidad con el módulo; decodifica imagen o video; devuelve un contenido con `release()` que libera todo. |
-| `calibration.js` | Define parámetros por módulo, sus valores iniciales y construye los controles con indicadores sincronizados. |
-| `stereoView.js` | Única pieza que habla con WebGL. Un `ShaderMaterial` por región recorta la vista que le toca, compone el anaglifo rojo-cian (rojo de la vista izquierda, verde/azul de la derecha) o crea vistas desde una foto normal desplazando píxeles según un relieve aproximado; viewport/scissor por región; ajuste «contain»; exporta a JPG con un render target. |
-| `anaglyph.js` / `sbsImage.js` / `sbsVideo.js` | Descriptor de cada modalidad (layout, ¿admite VR?, conversión de parámetros) y su activación. `sbsVideo.js` además conecta play/pausa/búsqueda/volumen con el `<video>`. |
-| `vrMode.js` | Entrar/salir del visor limpio; pantalla completa, bloqueo horizontal y Wake Lock con alternativa dentro de la página si el navegador no los permite. |
-| `stereoDetect.js` | Analiza una copia reducida de la imagen: correlación rojo↔verde (anaglifo) y mitad izquierda↔derecha, con control de simetría en espejo (SBS). |
-| `depthEstimate.js` | Profundidad de una foto normal con Depth Anything V2 (transformers.js, WASM), calculada en el dispositivo; suaviza el mapa y elige el plano de pantalla. |
-| `audioSync.js` | Desfase entre dos videos: huella de golpes de sonido cada 10 ms y correlación cruzada (±20 s), con medida de confianza. |
-| `alignPair.js` | Escala y posición del video derecho respecto del izquierdo, buscando la mejor correlación entre un cuadro de cada uno. |
-| `gestures.js` | Rueda/pellizco = zoom, arrastrar = mover, doble clic/toque = centrar, sobre el visor. |
-| `vrWizard.js` | Asistente de las gafas (miras por ojo, tercios de pantalla); guarda la separación de lentes en `localStorage`. |
-| `intro.js` | Portada: convergencia del título, selección de módulo y transición al Studio. |
-| `motion.js` | Animaciones puntuales (aviso, aparición del visor, transición de vista al entrar/salir de VR). |
+| `main.js` | Solo arranca: crea store, UI, ajustes, visor, calibración, studio y VR, y los conecta. Atiende la falta de WebGL. |
+| `store.js` | Estado único (módulo, estado, archivo, parámetros, mensaje con acción opcional, trabajo en curso, VR) y suscripción. No toca DOM ni WebGL. |
+| `ui.js` | Pinta el estado: píldora, archivo, avisos (con tipo dicho en texto e icono de forma distinta), barra de trabajo, barra del visor, etiqueta accesible del lienzo. Sin reglas de negocio. |
+| `studio.js` | Reglas RN-01/04/05/08/09/10; trabajos largos con progreso y cancelación (`startJob`/`cancelTask`); deshacer al restablecer; un trabajo nunca entrega su resultado a otro archivo. |
+| `fileImport.js` | Valida extensión, tamaño (80 MB imagen / 4 GB video), **firma binaria** y **dimensiones de cabecera** (≤ 100 MP y ≤ textura máxima) antes de decodificar; devuelve un contenido con `release()`. |
+| `calibration.js` | Parámetros por módulo, valores iniciales y panel con ayuda desplegable y restablecer por ajuste. |
+| `stereoView.js` | Visor Three.js: recorte por ojo, anaglifo Dubois, vistas desde foto normal, ajuste «contain», mipmaps con margen de costura, subida de cuadros de video solo si cambian, perfil de calidad, restauración del contexto WebGL, exportación con lectura asíncrona. |
+| `tasks.js` | Ejecuta una tarea en un Worker de módulo; envía los datos solo cuando el Worker confirma que cargó; si el navegador no admite Workers de módulo, la corre en el hilo principal. |
+| `audioSync.js` | Decodifica el audio a 16 kHz mono (¼ de memoria que 44.1 kHz), un archivo tras otro, y guarda la huella para reintentos; la correlación corre en el Worker. |
+| `alignPair.js` | Toma miniaturas de varios instantes comunes de los dos videos y delega la búsqueda al Worker. |
+| `depthEstimate.js` | Rasteriza una copia reducida de la foto y la envía al Worker de IA; cancelar termina el Worker. |
+| `settings.js` | Preferencia de calidad, diálogos de Ajustes y Atajos, olvidar la calibración de las gafas. |
+| `gestures.js` | Rueda/pellizco = zoom, arrastrar = mover, doble clic/toque = centrar y **atajos de teclado** del visor. |
+| `vrMode.js` / `vrWizard.js` | Visor VR (pantalla completa, orientación, Wake Lock, foco) y asistente de las gafas. |
+| `anaglyph.js` / `sbsImage.js` / `sbsVideo.js` | Descriptor de cada modalidad y su activación; `sbsVideo.js` conecta transporte y sincroniza el segundo video. |
+| `stereoDetect.js` · `intro.js` · `motion.js` | Detección del tipo de imagen · portada · animaciones puntuales que respetan «reducir movimiento». |
+
+### Rendimiento
+
+| Tarea | Antes | Ahora |
+|---|---|---|
+| Sincronía por audio | Correlación directa en el hilo principal (±20 s × 2 min ≈ 48 M operaciones), decodificación de ambos audios a 44.1 kHz **a la vez** | FFT en un Worker (O(N log N); misma salida, verificada contra la versión directa), ±30 s sobre 5 min, refinado parabólico (< 10 ms), audio a 16 kHz y **uno tras otro**; huella guardada: «Unir de nuevo» no vuelve a decodificar |
+| Alineación de dos videos | Rejilla completa sobre un único cuadro en el hilo principal | Rejilla gruesa a media resolución + afinado de los 4 mejores picos distintos, en un Worker, sobre varios instantes; confianza = puntuación **y** margen sobre el mejor candidato lejano |
+| Profundidad con IA | Inferencia WASM en el hilo principal (la página se congelaba segundos) | Worker persistente; progreso de descarga sumando todos los archivos del modelo; cancelación real |
+| Video en pausa | Cada redibujo (p. ej. mover un deslizador) volvía a subir el cuadro completo a la GPU | Solo se sube si el cuadro cambió |
+| Imágenes alejadas | Filtrado lineal (parpadeo/moiré al reducir fotos grandes) | Mipmaps, con un margen de costura que crece con el nivel de mipmap para no mezclar los dos ojos |
+| Lienzo | MSAA activado (inútil para rectángulos alineados) | Sin MSAA; densidad de píxeles con tope según perfil |
+| Exportación | Lectura síncrona de píxeles | Lectura asíncrona (WebGL 2) |
+
+**Degradación progresiva:** `core/deviceProfile.js` estima el perfil con memoria del equipo, núcleos, textura máxima y «ahorro de datos». El perfil **Ahorro** baja la densidad del lienzo (≤ 1.25×), quita mipmaps, limita la exportación a 4096 px, reduce la copia que analiza la IA y apaga efectos decorativos (desenfoques, transiciones de vista). **Nunca** cambia recortes, desplazamientos ni la resolución con que se lee el archivo: la precisión estereoscópica es la misma. El usuario puede elegir Alta o Ahorro en Ajustes.
+
+### Seguridad y privacidad
+
+- **Procesamiento local:** imágenes, videos y audio se leen con `URL.createObjectURL` y se procesan en el navegador; las URL temporales se revocan al liberar (verificado por prueba: creadas = revocadas). Ninguna petición lleva datos del usuario (verificado por prueba: 0 peticiones con cuerpo durante la estimación de profundidad).
+- **Modelo de IA:** solo se *descarga* (≈27 MB, una vez, desde Hugging Face vía transformers.js en jsDelivr); la inferencia corre en el Worker sobre una copia reducida de los píxeles.
+- **Content Security Policy** (meta en `index.html`): solo scripts propios y de jsDelivr, el `importmap` autorizado por hash, `wasm-unsafe-eval` para el modelo, conexiones solo a jsDelivr y Hugging Face, `object-src 'none'`, `form-action 'none'`. Las pruebas fallan ante cualquier violación.
+- **Integridad (SRI)** de Three.js en el importmap (navegadores que la admiten) y `referrer` desactivado hacia los CDN.
+- **Validación de archivos:** extensión + MIME + **firma binaria** (un PDF o ZIP renombrado a `.jpg` se rechaza) + límites de tamaño + dimensiones leídas de la cabecera antes de decodificar (protege de «bombas de descompresión»).
+- **XSS:** todo texto que viene de un archivo (nombre) se escribe con `textContent`; el único `innerHTML` construye controles a partir de constantes del código.
+- **Almacenamiento local:** solo `svs3d.lens` (calibración de las gafas) y `svs3d.quality` (calidad); se pueden borrar desde Ajustes.
+
+### Accesibilidad
+
+Navegación completa con teclado (portada, módulos, importación, calibración, visor con atajos, transporte, diálogos nativos `<dialog>` con foco atrapado y `Esc`); foco visible; el foco se mueve al Studio al salir de la portada y vuelve al botón de VR al salir del visor; etiquetas accesibles que contienen el texto visible (WCAG 2.5.3); valores de deslizadores anunciados con unidad (`aria-valuetext`); avisos en región `status` con su tipo dicho en palabras («Error:», «Aviso:», «Listo:») e icono de forma distinta (no solo color); objetivos táctiles ≥ 44 px en táctil (área sensible ampliada en los botones pequeños); `prefers-reduced-motion` y `forced-colors` atendidos; lectura de las ayudas por `aria-describedby` aunque estén plegadas.
+
+### Compatibilidad
+
+| Entorno | Estado |
+|---|---|
+| Chrome / Edge escritorio | Probado automáticamente (Chrome 1440×900) |
+| Android (Chrome) | Emulado (Pixel 7, táctil, vertical y horizontal); **falta prueba física** |
+| Safari macOS / iOS, Firefox | **No probados** en este entorno. El código evita APIs exclusivas y tiene alternativas: Workers de módulo (Safari ≥ 15, Firefox ≥ 114; si no, cálculo en el hilo principal), `requestVideoFrameCallback` opcional, pantalla completa opcional (iPhone: «Agregar a inicio»), `OfflineAudioContext` con frecuencia de respaldo para Safari antiguos. WebGL 2 es obligatorio (Three.js r180). |
 
 ### Cómo se logra el efecto estereoscópico
 
@@ -185,21 +248,35 @@ StereoVision-Studio-3D/
 
 ## 6. Pruebas
 
-### 6.1 Pruebas automatizadas de escritorio (Chromium, simulando GitHub Pages en un subdirectorio)
+### 6.1 Pruebas automatizadas (resultados reales de esta versión)
 
-Ejecutadas con Playwright sobre el sitio servido en `/StereoVision-Studio-3D/`. Comparan capturas del visor píxel a píxel. Resultado: **más de 130 comprobaciones aprobadas, 0 fallidas, 0 errores de consola, 0 respuestas 4xx**. _(Nota: Chromium de pruebas no decodifica H.264; el video se probó con una copia VP9 en MP4. El MP4 H.264 incluido debe comprobarse en tu teléfono.)_
+Ejecución de `npm test` en macOS con Google Chrome (WebGL por SwiftShader), sitio servido en `/StereoVision-Studio-3D/`:
 
-| ID | Qué se verificó | Resultado |
+- **Comprobaciones estáticas** (`npm run check`): sintaxis de 32 archivos JS, hash CSP del importmap, sin marcadores pendientes, rutas relativas → **correcto**.
+- **Unitarias** (`node --test`): **46 de 46 aprobadas** — FFT frente a correlación directa; desfase de audio recuperado con error < 20 ms en ambos sentidos; audios sin relación marcados como «no confiables»; alineación que recupera escala 1.18 y desplazamiento (±0.012) entre cámaras 16:9 y 4:3; pared lisa y escenas distintas sin falsa confianza; cancelación de la búsqueda; firmas y dimensiones de JPEG/PNG/WebP (VP8, VP8L, VP8X); validación (vacío, sin archivo, extensión, PDF disfrazado, bytes basura, módulo equivocado, tamaño, megapíxeles, textura máxima); perfiles de calidad; estado, calibración, orden de pares, instantes comunes.
+- **Navegador** (Playwright): **29 de 29 aprobadas** (25 en paralelo + 4 pesadas en serie). Cada prueba falla además si hay errores de consola, excepciones, violaciones de CSP o respuestas HTTP ≥ 400.
+
+| # | Escenario | Prueba |
 |---|---|---|
-| P-01 | Sin contenido: Studio visible, importar/calibración/restablecer/VR inactivos, instrucciones, consola limpia | ✅ |
-| P-02 | Anaglifo visible; escala, brillo y contraste cambian la vista; Restablecer devuelve la imagen idéntica | ✅ |
-| P-03 | SBS: región izquierda = mitad izquierda del archivo y derecha = mitad derecha; desplazamiento, alineación y escala cambian la vista; intercambio de ojos intercambia el contenido real; sin estiramiento a 3 proporciones; imagen sintética propia (izquierda roja/derecha azul) | ✅ |
-| P-04 | Video: reproducir, pausar (imagen congelada), búsqueda, ±10 s, volumen, silencio, tiempo/duración, volver a reproducir desde el final | ✅ |
-| P-05 | Desplazamiento y escala durante la reproducción: mismo `<video>`, sin recarga, ambas regiones del mismo cuadro | ✅ |
-| P-06 | 7 cambios consecutivos imagen↔video + reimportaciones: ≤1 textura, ≤1 video, URLs temporales revocadas, la página no se recarga | ✅ |
-| P-07 | Negativas: `.txt`, `.pdf`, JPG vacío, JPG corrupto, MP4 corrupto, video en módulo de imagen e imagen en módulo de video → mensaje claro, sin controles activos, y recuperación importando un archivo válido | ✅ |
-| P-08 | VR (móvil emulado, horizontal y vertical): editor oculto, dos regiones, parámetros y archivo conservados, salida táctil, controles que se ocultan/reaparecen, `Esc`, reproducción desde VR, aviso en vertical | ✅ |
-| P-09 | Todas las rutas bajo el subdirectorio, sin 404 ni rutas absolutas | ✅ (en simulación; **confirma en tu URL real**) |
+| 1 | Importar imagen válida | detección de tipo, datos del archivo, VR habilitado, etiqueta del lienzo |
+| 2 | Importar imagen inválida | `.txt`, PDF renombrado a `.jpg`, JPEG dañado → error claro y recuperación con la muestra |
+| 3 | Archivo vacío | mensaje «está vacío» |
+| 4 | Archivo demasiado grande | 81 MB en bytes y PNG de 20000×20000 px rechazados antes de decodificar |
+| 5–6 | Cambiar de archivo y de módulo repetidamente | ≤ 1 textura y ≤ 1 `<video>` en todo momento; 0 al cambiar de módulo; URLs temporales creadas = revocadas |
+| 7 | Restablecer calibración | valores iniciales, **Deshacer**, restablecer un solo ajuste |
+| 8 | Exportar | descarga real de `*_anaglifo.jpg` (JPEG válido), original sin cambios; brillo modifica la exportación y Restablecer la devuelve igual |
+| – | Ojos | par sintético rojo/azul: cada ojo recibe su mitad e «Intercambiar ojos» intercambia el contenido exportado |
+| 9–10 | Reproducir / pausar | estado, avance, imagen congelada en pausa, silencio, −10 s |
+| 11 | Sincronizar dos videos | dos MP4 grabados en el navegador con desfase de 1.2 s y zoom 1.2× → Sincronía −1.2 s (±0.15) y tamaño 120 % (±4) |
+| 12 | Cancelar procesamiento | unión de videos y estimación de profundidad: aviso inmediato, sin resultados tardíos, **Reintentar** funciona |
+| 13 | Entrar y salir de VR | asistente de gafas (toque y teclado), calibración guardada, archivo y parámetros intactos, aviso en vertical, salida táctil, video en VR |
+| 14 | Teclado | portada→Studio→muestra solo con teclado, foco visible, atajos del visor, barra del visor, diálogos con `Esc` |
+| 15 | Equipo limitado | memoria 1 GB y 2 núcleos simulados → perfil Ahorro, densidad ≤ 1.25× aun con pantalla 3×, exportación a resolución completa del archivo; el usuario puede volver a Alta |
+| – | Robustez | pérdida y restauración del contexto WebGL; pellizco y arrastre táctiles; sin desplazamiento horizontal en móvil; objetivos táctiles ≥ 44 px |
+| – | IA y privacidad | profundidad estimada en el Worker; solo se contacta al sitio, jsDelivr y Hugging Face; 0 peticiones con cuerpo |
+| – | Accesibilidad (axe-core, WCAG 2.2 A/AA) | portada, Studio vacío/con archivo/con error, Studio de video y ambos diálogos: **0 infracciones** |
+
+Nota honesta: las dos pruebas que **graban** videos sintéticos con MediaRecorder dependen del reloj del equipo; con muchas pruebas en paralelo, la grabación a veces salía sin imagen o desfasada, por eso corren en serie (8 de 8 repeticiones aprobadas en serie).
 
 ### 6.2 Matriz de pruebas en tus dispositivos — **COMPLETAR**
 
@@ -219,9 +296,21 @@ Estas pruebas requieren lentes, gafas y teléfono reales y **solo tú puedes hac
 
 1. **El video SBS se dibujaba en negro.** Con una `Texture` normal, Three.js toma el tamaño de `video.width/height` (que valen 0) y falla al reservar la textura (`glTexStorage2D: dimensions must be greater than zero`). **Solución:** usar `THREE.VideoTexture`, que no reserva almacenamiento fijo, y comprobar el resultado comparando el cuadro dibujado con el cuadro del video.
 2. **Reproducir tras llegar al final terminaba al instante.** Al adelantar hasta el final con el video en pausa, el navegador aún no marca `ended`, por lo que `play()` no reiniciaba y el video se detenía enseguida. **Solución:** en `sbsVideo.play()` se considera «al final» cuando `currentTime ≥ duración − 0.05 s`, y se reinicia desde 0.
-3. _Añade aquí al menos una incidencia que encuentres en tu teléfono o con los lentes y cómo la resolviste._
+3. **El asistente de las gafas no respondía al tocar (versión 2).** Entrar al VR lanzaba una *View Transition* a la vez que la pantalla completa; Chrome dejaba la transición activa y todos los toques llegaban a la raíz del documento. **Solución:** entrar y salir del VR sin transición de vista (prueba 13).
+4. **No se podía reintentar la profundidad.** Tras un fallo, el aviso pedía «elegir otra vez Foto normal», pero elegir la opción ya marcada no dispara ningún evento. **Solución:** el aviso trae un botón **Reintentar**.
+5. **Cancelar y reintentar al instante se anulaba solo.** La caché de audio guardaba una promesa ligada a la señal ya cancelada. **Solución:** la caché no depende de la cancelación y cada ejecución tiene su propia señal (prueba 12).
+6. **En teléfono, al cargar un archivo el resultado quedaba fuera de pantalla** (el visor está arriba de los botones). **Solución:** el visor se desplaza a la vista al cargar.
+7. **El foco se perdía al salir de la portada** (se enfocaba un botón todavía inerte durante la transición). **Solución:** el foco se mueve cuando la transición ya aplicó el cambio.
+8. _Añade aquí al menos una incidencia que encuentres en tu teléfono o con los lentes y cómo la resolviste._
 
-### 6.4 Registro de calibración — **COMPLETAR**
+### 6.4 Limitaciones de las pruebas
+
+- No hay dispositivos físicos: **la comodidad visual con lentes rojo-cian o gafas, iPhone/Safari, Firefox y Android real no se probaron**; la matriz 6.2 sigue pendiente.
+- WebGL corre por software (SwiftShader); el rendimiento de GPU real no se midió.
+- Lectores de pantalla (VoiceOver, NVDA, TalkBack) no se probaron; axe-core cubre solo las reglas automatizables.
+- Pantalla completa, bloqueo de orientación y Wake Lock no se pueden verificar en un navegador automatizado.
+
+### 6.5 Registro de calibración — **COMPLETAR**
 
 | Contenido | Módulo | Ajustes que dejaron la vista más cómoda | Dispositivo | Observaciones |
 |---|---|---|---|---|
@@ -244,4 +333,4 @@ Estas pruebas requieren lentes, gafas y teléfono reales y **solo tú puedes hac
 
 ## 8. Créditos
 
-Three.js (MIT) · Material estereoscópico de muestra: fotografía propia del autor · Diseño y código: José Alonso Godinez Franco.
+Three.js (MIT) · transformers.js (Apache-2.0) y Depth Anything V2 small (Apache-2.0) para la profundidad estimada · Pruebas: Playwright (Apache-2.0), axe-core (MPL-2.0) · Material estereoscópico de muestra: fotografía propia del autor · Diseño y código: José Alonso Godinez Franco.

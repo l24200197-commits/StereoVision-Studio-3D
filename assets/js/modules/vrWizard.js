@@ -30,6 +30,15 @@ export function loadLens() {
   return { x: 0, y: 0, saved: false };
 }
 
+/** Borra la calibración guardada (Ajustes → Gafas VR). */
+export function forgetLens() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* almacenamiento no disponible */
+  }
+}
+
 function saveLens(lens) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: lens.x, y: lens.y }));

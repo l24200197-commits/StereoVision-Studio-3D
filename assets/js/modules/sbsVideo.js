@@ -146,6 +146,9 @@ export const sbsVideoModule = {
       const duration = video.duration || 0;
       video.currentTime = Math.min(Math.max(video.currentTime + delta, 0), duration);
     }
+    function toggleMute() {
+      video.muted = !video.muted;
+    }
 
     on(t.play, 'click', toggle);
     on(t.back, 'click', () => seekBy(-SKIP_SECONDS));
@@ -161,7 +164,7 @@ export const sbsVideoModule = {
       video.volume = Number(t.volume.value) / 100;
       video.muted = video.volume === 0;
     });
-    on(t.mute, 'click', () => { video.muted = !video.muted; });
+    on(t.mute, 'click', toggleMute);
 
     /* ---- Eventos reales del medio → estado de la aplicación ---- */
     const setStatus = (status) => {
@@ -203,6 +206,7 @@ export const sbsVideoModule = {
       pause,
       toggle,
       seekBy,
+      toggleMute,
       /** Un ajuste cambió: «Sincronía» mueve el video derecho al instante. */
       onParams(key) {
         if (key === 'sync') syncRight(true);
