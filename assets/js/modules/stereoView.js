@@ -54,8 +54,8 @@ const FRAGMENT_SHADER = /* glsl */ `
   varying vec2 vUv;
 
   // Cuánto se acerca cada punto (0 = plano de la pantalla, positivo = sale).
-  // Con mapa de profundidad (IA, en el dispositivo) es la profundidad real de la
-  // foto; sin él, un relieve aproximado: abajo y al centro cerca, arriba lejos.
+  // Con mapa de profundidad (IA, en el dispositivo) es profundidad RELATIVA
+  // estimada, no distancia física; sin él, un relieve aproximado.
   float nearness(vec2 e) {
     if (uHasDepth > 0.5) return texture2D(uDepth, vec2(e.x, 1.0 - e.y)).r - uPlane;
     float ground = 0.5 - e.y;
@@ -72,19 +72,25 @@ const FRAGMENT_SHADER = /* glsl */ `
 
   vec3 sampleView(vec2 uv, vec4 crop, vec2 shift, float synth) {
     vec2 e = uv + shift;
+    // No convertir las coordenadas fuera del cuadro en muestras del borde:
+    // conservar una máscara evita estirar píxeles de los límites.
     float inside = step(0.0, e.x) * step(e.x, 1.0) * step(0.0, e.y) * step(e.y, 1.0);
     if (synth != 0.0) {
-      // Busca de qué punto de la foto viene este píxel (x_origen = x + s·d(x_origen)):
-      // unas iteraciones bastan y evitan que los bordes del sujeto se dupliquen.
+      // Reproyección iterativa de una sola vista. Es síntesis aproximada y puede
+      // dejar oclusiones; la máscara las hace explícitas en vez de duplicar bordes.
       float sx = e.x;
-      for (int i = 0; i < 4; i++) sx = e.x + synth * nearness(vec2(clamp(sx, 0.0, 1.0), e.y));
+      for (int i = 0; i < 4; i++) {
+        float bounded = clamp(sx, 0.0, 1.0);
+        sx = e.x + synth * nearness(vec2(bounded, e.y));
+      }
       e.x = sx;
     }
+    inside *= step(0.0, e.x) * step(e.x, 1.0) * step(0.0, e.y) * step(e.y, 1.0);
     e = clamp(e, 0.0, 1.0);
     vec2 t = crop.xy + e * crop.zw;
     // Un recorte puede salirse del video (dos teléfonos con cuadros distintos): ahí, negro.
     inside *= step(0.0, t.x) * step(t.x, 1.0) * step(0.0, t.y) * step(t.y, 1.0);
-    vec2 margin = seamMargin(t);
+    vec2 margin = min(seamMargin(t), crop.zw * 0.49);
     t = clamp(t, crop.xy + margin, crop.xy + crop.zw - margin);
     return texture2D(uMap, t).rgb * inside;
   }
@@ -123,7 +129,7 @@ const DEFAULT_VIEW_PARAMS = Object.freeze({
 });
 
 const EYE_GAP_PX = 2; // separación visible entre regiones en el Studio
-const MAX_SYNTH = 0.035; // disparidad máxima del relieve (fracción del ancho), con o sin mapa de profundidad
+const MAX_SYNTH = 0.025; // disparidad conservadora (2.5% del ancho); limita artefactos de reproyección
 const CLEAR_COLOR = 0x050505;
 const DEFAULT_QUALITY = Object.freeze({ pixelRatioCap: 2, mipmaps: true, exportMaxPx: 8192 });
 

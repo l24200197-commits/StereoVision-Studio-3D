@@ -53,7 +53,7 @@ function loadPipeline(onProgress) {
 
 /**
  * @param image { data: Uint8ClampedArray RGBA, width, height }
- * @returns { data: Uint8Array, width, height, plane } con filas de arriba hacia abajo
+ * @returns { data: Uint8Array, width, height, plane } mapa relativo filtrado y normalizado, filas de arriba hacia abajo
  */
 export async function runDepth(image, { onProgress } = {}) {
   const pipe = await loadPipeline(onProgress);
